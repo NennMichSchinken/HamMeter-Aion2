@@ -113,7 +113,7 @@ public sealed class CombatPacketParser
             // target is a known player, that's damage taken.
             if (actorId != targetId && this.ResolvePlayer(targetId) is { } victim)
             {
-                m_tracker.DamageTaken(now, victim, amount, actorId);
+                m_tracker.DamageTaken(now, victim, amount, actorId, this.IsOurs(victim));
             }
 
             return;
@@ -123,7 +123,7 @@ public sealed class CombatPacketParser
         {
             // Self-casts (actor == target) are instant self-heals.
             PlayerRef? healed = actorId == targetId ? source : this.ResolvePlayer(targetId);
-            m_tracker.Healing(now, source.Value, healed, amount);
+            m_tracker.Healing(now, source.Value, healed, amount, this.IsOurs(source.Value), healed is { } h && this.IsOurs(h));
             this.SkillLog?.Add(source.Value, "heal", skillCode, amount);
             return;
         }
@@ -135,7 +135,7 @@ public sealed class CombatPacketParser
             return;
         }
 
-        m_tracker.DamageDone(now, source.Value, amount, targetId, m_entities.TargetName(targetId), m_entities.IsBoss(targetId));
+        m_tracker.DamageDone(now, source.Value, amount, targetId, m_entities.TargetName(targetId), m_entities.IsBoss(targetId), this.IsOurs(source.Value));
         this.SkillLog?.Add(source.Value, "hit", skillCode, amount);
     }
 
@@ -188,7 +188,7 @@ public sealed class CombatPacketParser
             }
 
             PlayerRef? healed = actorId == targetId ? source : this.ResolvePlayer(targetId);
-            m_tracker.Healing(now, source.Value, healed, amount);
+            m_tracker.Healing(now, source.Value, healed, amount, this.IsOurs(source.Value), healed is { } h && this.IsOurs(h));
             this.SkillLog?.Add(source.Value, "hot", skillCode, amount);
             return;
         }
@@ -202,7 +202,7 @@ public sealed class CombatPacketParser
         {
             if (this.ResolvePlayer(targetId) is { } victim)
             {
-                m_tracker.DamageTaken(now, victim, amount, actorId);
+                m_tracker.DamageTaken(now, victim, amount, actorId, this.IsOurs(victim));
             }
 
             return;
@@ -214,7 +214,7 @@ public sealed class CombatPacketParser
             return;
         }
 
-        m_tracker.DamageDone(now, source.Value, amount, targetId, m_entities.TargetName(targetId), m_entities.IsBoss(targetId));
+        m_tracker.DamageDone(now, source.Value, amount, targetId, m_entities.TargetName(targetId), m_entities.IsBoss(targetId), this.IsOurs(source.Value));
         this.SkillLog?.Add(source.Value, "tick", skillCode, amount);
     }
 
@@ -227,7 +227,7 @@ public sealed class CombatPacketParser
 
         if (this.ResolvePlayer(entityId) is { } player)
         {
-            m_tracker.Death(this.Clock(), player);
+            m_tracker.Death(this.Clock(), player, this.IsOurs(player));
         }
         else if (m_entities.Player(entityId) is null && !m_entities.IsSummon(entityId))
         {
@@ -312,9 +312,13 @@ public sealed class CombatPacketParser
         return m_entities.Player(entityId) is { } p ? ToRef(p) : null;
     }
 
+    // The user (and, later, the party) versus players who only happen to be nearby. Until
+    // the user is known every player counts.
+    private bool IsOurs(PlayerRef p) => !m_entities.UserKnown || p.IsUser;
+
     private static PlayerRef ToRef(KnownPlayer p)
     {
-        string name = p.Name ?? (p.ClassId == ClassInfo.SpiritClassId ? "Spirit" : $"Player_{p.Id}");
+        string name = p.Name ?? (p.IsUser ? "You" : p.ClassId == ClassInfo.SpiritClassId ? "Spirit" : $"Player_{p.Id}");
         return new PlayerRef(p.Id, name, ClassInfo.KeyFromId(p.ClassId), p.IsUser);
     }
 

@@ -24,6 +24,7 @@ public sealed class MeterWindow
     private readonly Config m_config;
     private readonly SettingsWindow m_settings;
     private readonly EncounterTracker m_tracker;
+    private readonly Func<string, IntPtr> m_classIcon;
     private readonly Func<string?> m_status;
     private readonly Dictionary<int, float> m_animFractions = new();
 
@@ -31,12 +32,14 @@ public sealed class MeterWindow
     private Metric m_metric = Metric.DamageDone;
     private int m_view = -1; // -1 = Current, -2 = Overall, >=0 = past index
 
+    // classIcon: texture handle for a class tag (IntPtr.Zero when not loaded).
     // status: a message shown instead of the bars when capture isn't running.
-    public MeterWindow(Config config, SettingsWindow settings, EncounterTracker tracker, Func<string?> status)
+    public MeterWindow(Config config, SettingsWindow settings, EncounterTracker tracker, Func<string, IntPtr> classIcon, Func<string?> status)
     {
         m_config = config;
         m_settings = settings;
         m_tracker = tracker;
+        m_classIcon = classIcon;
         m_status = status;
     }
 
@@ -411,16 +414,20 @@ public sealed class MeterWindow
         float boxBottom = pos.Y + barH - 2f;
         float boxH = boxBottom - boxTop;
 
-        // Icon mode: the class's line icon in white with a soft shadow, like the header
-        // glyphs; falls back to the text tag for a class without an icon.
-        if (m_config.JobIndicator == 2 && ClassInfo.IconFor(job) is Icon icon)
+        // Icon mode: the official class icon on a small dark chip, so its own colour stays
+        // readable on a bar of the same colour. Falls back to the text tag if not loaded.
+        if (m_config.JobIndicator == 2)
         {
-            float inset = boxH * 0.1f;
-            Vector2 gpos = new(x + inset, boxTop + inset);
-            float gsize = boxH - (inset * 2f);
-            Icons.Draw(dl, icon, new Vector2(gpos.X + 1f, gpos.Y + 1f), gsize, Col(new Vector4(0f, 0f, 0f, 0.85f)));
-            Icons.Draw(dl, icon, gpos, gsize, Col(new Vector4(1f, 1f, 1f, 1f)));
-            return x + boxH + 5f;
+            IntPtr icon = m_classIcon(job);
+            if (icon != IntPtr.Zero)
+            {
+                Vector2 chipMin = new(x, boxTop);
+                Vector2 chipMax = new(x + boxH, boxBottom);
+                dl.AddRectFilled(chipMin, chipMax, Col(new Vector4(0.086f, 0.086f, 0.102f, 0.78f)), 3f);
+                float inset = boxH * 0.08f;
+                dl.AddImage(icon, chipMin + new Vector2(inset, inset), chipMax - new Vector2(inset, inset));
+                return x + boxH + 5f;
+            }
         }
 
         // Text tag — a frosted "glass" chip. It floats over the coloured bar: a

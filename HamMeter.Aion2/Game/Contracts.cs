@@ -23,6 +23,9 @@ public interface IEntityDirectory
 
     // Whether the entity is a boss according to the monster list.
     bool IsBoss(int entityId);
+
+    // Whether the user's own entity is known; until then every player counts.
+    bool UserKnown { get; }
 }
 
 // What skill codes mean (docs/protocol.md §7).

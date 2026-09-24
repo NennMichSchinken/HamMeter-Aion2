@@ -10,6 +10,7 @@ public static class Opcodes
     public const ushort OwnCharacter = 0x3633;   // 33 36
     public const ushort Spawn = 0x3641;          // 41 36
     public const ushort OtherCharacter = 0x3645; // 45 36
+    public const ushort UserState = 0x364A;      // 4A 36
     public const ushort Hit = 0x3804;            // 04 38
     public const ushort Tick = 0x3805;           // 05 38
     public const ushort RemainingHp = 0x8D00;    // 00 8D

@@ -361,6 +361,19 @@ At byte offset 5 an i64 LE: milliseconds since 0001-01-01 (the .NET epoch).
 Subtract `62,135,596,800,000` to get Unix milliseconds. Comparing with the arrival time
 gives an estimate of the latency.
 
+### 6.10 `4A 36` — user state
+
+**Status: observed** (3 recordings, 2 characters)
+
+The first body field (varint) is always the **user's own entity id**, never anyone
+else's. Unlike `33 36` it also arrives without a zone change, during normal play, so it
+identifies the user when HamMeter starts in the middle of a session. The rest of the
+packet is not decoded. Other packets seen only for the user (so far): `03 8D`, `41 37`,
+`42 37`, `46 37`, `46 36`.
+
+Entity ids seem stable longer than a zone: the same character kept id 3580 over several
+hours and zone changes.
+
 ### 6.9 Not used by HamMeter
 
 `2A 38`, `2B 38` buffs/effects; `49 36` character stats. Listed so they are recognised
@@ -431,7 +444,13 @@ from anywhere else. Everything else HamMeter builds from its own recordings.
 
 **Fights and bosses:** a boss (monster list) always gets its own fight: the first hit on
 it closes a running trash fight, and the fight ends when the last boss dies (§5.3).
-Confirmed mob codes from recordings: 2100456 Red Cap Fungen, 2100041 Red Cap Fungie.
+Confirmed mob codes from recordings: 2100456 Red Cap Fungen, 2100041 Red Cap Fungie,
+2700914 Toblini (boss, sealed dungeon; the fight ended with its death), 2700915 Hideout
+Sura (its adds).
+
+**Players nearby:** once the user is known (§6.10), only the user starts and keeps fights
+going. Other players count only on enemies the user fights too — the same idea as the
+other meters' "target" views — so strangers in the open world stay out of the list.
 
 ---
 

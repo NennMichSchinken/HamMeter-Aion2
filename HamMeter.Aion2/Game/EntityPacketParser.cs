@@ -19,6 +19,19 @@ public sealed class EntityPacketParser(EntityRegistry registry, ILogger<EntityPa
         router.On(Opcodes.OwnCharacter, p => this.OnCharacter(p, isUser: true));
         router.On(Opcodes.OtherCharacter, p => this.OnCharacter(p, isUser: false));
         router.On(Opcodes.Spawn, this.OnSpawn);
+        router.On(Opcodes.UserState, this.OnUserState);
+    }
+
+    // ----- 4A 36: its first field is always the user (docs/protocol.md §6.10) -----------
+
+    private void OnUserState(byte[] packet)
+    {
+        int entityId = (int)PacketReader.Body(packet).ReadVarInt();
+        if (entityId > 0 && registry.UserId != entityId)
+        {
+            registry.SetUser(entityId);
+            log.LogInformation("Own character recognised (entity {Id})", entityId);
+        }
     }
 
     // ----- 33 36 / 45 36: a named character ---------------------------------------------

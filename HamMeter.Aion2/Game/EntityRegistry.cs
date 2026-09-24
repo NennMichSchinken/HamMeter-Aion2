@@ -34,11 +34,32 @@ public sealed class EntityRegistry : IEntityDirectory
         if (isUser)
         {
             m_userName = name;
-            this.UserId = entityId;
+            this.SetUser(entityId);
         }
 
-        e.IsUser = name == m_userName;
+        e.IsUser = name == m_userName || entityId == this.UserId;
     }
+
+    // The user's entity, known before (or without) a name packet.
+    public void SetUser(int entityId)
+    {
+        if (this.UserId is int old && old != entityId && m_players.TryGetValue(old, out Entry? previous))
+        {
+            previous.IsUser = false;
+        }
+
+        this.UserId = entityId;
+        if (!m_players.TryGetValue(entityId, out Entry? e))
+        {
+            e = this.Add(entityId);
+        }
+
+        e.IsUser = true;
+        e.Name ??= m_userName; // a new entity id after a zone change: same character
+        m_summons.Remove(entityId);
+    }
+
+    public bool UserKnown => this.UserId is not null;
 
     public void RegisterSummon(int summonId, int ownerId)
     {

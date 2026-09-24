@@ -160,6 +160,33 @@ public class ProtocolTests
     }
 
     [Fact]
+    public void UserState_IdentifiesTheUser_AndPlayersNearbyOnlyCountOnOurEnemies()
+    {
+        var tracker = new EncounterTracker();
+        using OwnEngine engine = OwnEngine.Offline(tracker, NullLoggerFactory.Instance);
+
+        const int User = 11195;
+        const int Stranger = 11207;
+        const int OurMob = 5000;
+        const int TheirMob = 5001;
+
+        engine.Stream.Dispatch(Packet(Opcodes.UserState, w => { w.VarInt(User); w.Bytes(6); }));
+        engine.Stream.Dispatch(Hit(Stranger, TheirMob, 11_020_000, 9_999)); // their own fight: ignored
+        Assert.Null(tracker.Current);
+
+        engine.Stream.Dispatch(Hit(User, OurMob, 17_010_000, 1_000));
+        engine.Stream.Dispatch(Hit(Stranger, TheirMob, 11_020_000, 9_999)); // still not our enemy
+        engine.Stream.Dispatch(Hit(Stranger, OurMob, 11_020_000, 500));     // helps on ours: counts
+
+        var names = tracker.Current!.Combatants.ToDictionary(c => c.Id);
+        Assert.Equal(2, names.Count);
+        Assert.Equal("You", names[User].Name);  // no name packet yet
+        Assert.True(names[User].IsUser);
+        Assert.Equal(1_000, names[User].DamageTotal);
+        Assert.Equal(500, names[Stranger].DamageTotal);
+    }
+
+    [Fact]
     public void Spawn_WithUnknownOwner_IsNotASummon()
     {
         var tracker = new EncounterTracker();

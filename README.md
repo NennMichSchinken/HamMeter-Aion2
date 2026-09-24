@@ -111,8 +111,9 @@ Concept, design, and UX/UI by **NennMichSchinken**. The implementation was writt
 
 - Monster names, boss flags and dungeon data: **taengu** ([A2Tools-DPS-Meter](https://github.com/taengu/A2Tools-DPS-Meter), GPL-3.0), see `HamMeter.Aion2/Game/Data/SOURCE.md`
 - Old reader (still included during the transition): **Kuroukihime** ([AIon2-Dps-Meter](https://github.com/Kuroukihime/AIon2-Dps-Meter), GPL-3.0)
+- Class icons: official AION 2 artwork by **NCSoft**, see `HamMeter.Aion2/Assets/Classes/SOURCE.md`
 - Bar textures and styles: from **WispUI** (NennMichSchinken, MIT), the FFXIV suite HamMeter lives on in
-- Icons, including the class icons: [Lucide](https://lucide.dev) (ISC, see `HamMeter.Aion2/Assets/Icons/LICENSE-lucide.txt`)
+- Icons: [Lucide](https://lucide.dev) (ISC, see `HamMeter.Aion2/Assets/Icons/LICENSE-lucide.txt`)
 - Packet capture library: [SharpPcap](https://github.com/dotpcap/sharppcap) (MIT); LZ4: [K4os.Compression.LZ4](https://github.com/MiloszKrajewski/K4os.Compression.LZ4) (MIT)
 - Installer engine: [Inno Setup](https://jrsoftware.org/isinfo.php) by Jordan Russell and Martijn Laan
 

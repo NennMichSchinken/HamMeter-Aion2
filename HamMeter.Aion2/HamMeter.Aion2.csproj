@@ -47,6 +47,8 @@
     <!-- Bar textures from WispUI (same author, MIT). -->
     <EmbeddedResource Include="Assets\Bars\*.png" LogicalName="HamMeter.Bars.%(Filename)%(Extension)" />
     <None Include="Assets\Icons\LICENSE-lucide.txt" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Official AION 2 class icons (NCSoft), see Assets\Classes\SOURCE.md. -->
+    <EmbeddedResource Include="Assets\Classes\*.png" LogicalName="HamMeter.Classes.%(Filename)%(Extension)" />
   </ItemGroup>
 
 </Project>

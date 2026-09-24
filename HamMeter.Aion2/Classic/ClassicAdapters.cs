@@ -31,6 +31,9 @@ public sealed class ClassicEntities(EntityTracker tracker) : IEntityDirectory
 
     public bool IsBoss(int entityId) => tracker.GetTargetMob(entityId) is { MobCode: not 0, IsBoss: true };
 
+    // The classic reader keeps its old behaviour: every player counts.
+    public bool UserKnown => false;
+
     private static KnownPlayer ToKnown(Player p) =>
         new(p.Id, p.IsIdentified ? p.Name : null, p.CharacterClass?.Id ?? 0, p.IsUser);
 }

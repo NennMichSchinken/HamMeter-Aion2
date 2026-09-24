@@ -45,6 +45,9 @@ public static class Replay
             }
         });
 
+        // First body varint per packet, to find packets that are only ever about the user.
+        var firstIds = new List<(ushort Op, uint Id, DateTime Time)>();
+
         var opcodes = new Dictionary<ushort, int>();
         var expanded = new List<byte[]>();
         int records = 0;
@@ -61,6 +64,13 @@ public static class Replay
                 if (Opcodes.TryRead(p, out ushort op))
                 {
                     opcodes[op] = opcodes.GetValueOrDefault(op) + 1;
+                    try
+                    {
+                        firstIds.Add((op, PacketReader.Body(p).ReadVarInt(), now));
+                    }
+                    catch (PacketFormatException)
+                    {
+                    }
                 }
             }
 
@@ -104,6 +114,32 @@ public static class Replay
         report.AppendLine();
         report.AppendLine("Hits by the user on players:");
         Unusual.ForEach(u => report.AppendLine(u));
+        report.AppendLine();
+        if (engine.Entities.UserId is int user)
+        {
+            // Which opcodes name the user first, and how often they name other players.
+            var players = firstIds.Select(f => (int)f.Id).Where(i => i != user && engine.Entities.Player(i) is not null).ToHashSet();
+            report.AppendLine($"Opcodes whose first field is the user ({user}) vs. another player:");
+            foreach (var g in firstIds.GroupBy(f => f.Op))
+            {
+                int mine = g.Count(f => f.Id == (uint)user);
+                int others = g.Count(f => players.Contains((int)f.Id));
+                if (mine > 0)
+                {
+                    string first = string.Join(" ", g.Where(f => f.Id == (uint)user).Select(f => f.Time.ToString("HH:mm:ss")).Take(8));
+                    report.AppendLine($"  {g.Key & 0xFF:X2} {g.Key >> 8:X2}: user {mine} (first {first}), other players {others}, total {g.Count()}");
+                }
+            }
+
+            report.AppendLine();
+        }
+
+        foreach (ushort op in new ushort[] { 0x364A, 0x8D21, 0x8D03, 0x3741 })
+        {
+            var ids = firstIds.Where(f => f.Op == op).GroupBy(f => f.Id).Select(g => $"{g.Key}x{g.Count()}");
+            report.AppendLine($"First field of {op & 0xFF:X2} {op >> 8:X2}: {string.Join(", ", ids)}");
+        }
+
         report.AppendLine();
         report.AppendLine("Opcodes (wire order: count):");
         foreach ((ushort op, int count) in opcodes.OrderByDescending(kv => kv.Value))

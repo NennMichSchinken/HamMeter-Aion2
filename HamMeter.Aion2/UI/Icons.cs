@@ -24,17 +24,6 @@ public enum Icon
     LockOpen,
     Sparkles,
     Bell,
-
-    // Classes (ClassInfo.Icon).
-    Sword,
-    Shield,
-    Swords,
-    BowArrow,
-    Flame,
-    Ghost,
-    Cross,
-    Music,
-    HandFist,
 }
 
 // Draws Lucide icons (Assets/Icons, ISC license) as ImGui strokes. Lucide icons are
@@ -62,15 +51,6 @@ internal static class Icons
         [Icon.LockOpen] = "lock-open.svg",
         [Icon.Sparkles] = "sparkles.svg",
         [Icon.Bell] = "bell-dot.svg",
-        [Icon.Sword] = "sword.svg",
-        [Icon.Shield] = "shield.svg",
-        [Icon.Swords] = "swords.svg",
-        [Icon.BowArrow] = "bow-arrow.svg",
-        [Icon.Flame] = "flame.svg",
-        [Icon.Ghost] = "ghost.svg",
-        [Icon.Cross] = "cross.svg",
-        [Icon.Music] = "music.svg",
-        [Icon.HandFist] = "hand-fist.svg",
     };
 
     private static readonly Dictionary<Icon, LucideIcon?> Cache = new();
