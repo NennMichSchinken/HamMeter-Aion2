@@ -322,12 +322,17 @@ public sealed class SettingsWindow
                 ImGui.TextDisabled("Encrypted, readable only by your Windows account.");
                 ImGui.TextDisabled($"Turns off on restart, deleted after {Capture.PacketRecorder.RetentionDays} days.");
                 ImGui.Unindent(24f);
-                changed |= CheckboxRow("Use HamMeter's own packet reader (beta)", ref m_config.OwnPacketReader);
+                bool classic = !m_config.OwnPacketReader;
+                if (CheckboxRow("Use the classic packet reader (fallback)", ref classic))
+                {
+                    m_config.OwnPacketReader = !classic;
+                    changed = true;
+                }
+
                 ImGui.Indent(24f);
+                ImGui.TextDisabled("Only if HamMeter's own reader misses something after a patch.");
                 ImGui.TextDisabled("Takes effect after restarting HamMeter.");
                 ImGui.TextDisabled($"Active now: {m_config.ActiveReader}");
-                ImGui.TextDisabled("Writes per-skill totals to HamMeter.log after each fight,");
-                ImGui.TextDisabled("to compare with the in-game meter.");
                 ImGui.Unindent(24f);
                 SubHeading("Updates");
                 bool checkOnStart = m_updates.CheckOnStart;

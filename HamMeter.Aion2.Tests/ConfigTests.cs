@@ -13,6 +13,7 @@ public class ConfigTests
         {
             Version = 1,
             CombatTimeout = 10f,
+            OwnPacketReader = false,
             JobColors = new Dictionary<string, Vector4>
             {
                 ["ASN"] = ClassInfo.DefaultColorsV2()["ASN"], // old default: follows the icon now
@@ -25,6 +26,7 @@ public class ConfigTests
         Assert.Equal(ClassInfo.DefaultColors()["ASN"], config.JobColors["ASN"]);
         Assert.Equal(mine, config.JobColors["TEM"]);
         Assert.Equal(30f, config.CombatTimeout);
+        Assert.True(config.OwnPacketReader); // v5: HamMeter's own reader is the default
         Assert.Equal(Config.CurrentVersion, config.Version);
     }
 

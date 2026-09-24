@@ -2,7 +2,7 @@
 
 A minimalist, easy-to-read damage meter for **Aion 2**, with the same look and settings as [HamMeter for FFXIV](https://github.com/NennMichSchinken/HamMeter). It runs as a transparent overlay on top of the game.
 
-> **Status: early / experimental.** HamMeter has its own packet reader now. Damage matches the in-game meter 1:1 in our tests, healing and deaths are read as well. Party features (names of group members) still need testing in a group.
+> **Status: early / experimental.** HamMeter reads the game with its own packet reader. Damage matches the in-game meter 1:1 in our tests; healing, deaths and boss fights are read as well. Party features (names of group members) still need testing in a group.
 
 ## How it works
 
@@ -15,7 +15,7 @@ HamMeter reads the game's network packets passively (via Npcap, or Windows raw s
 - **Fights** (`HamMeter.Aion2/Combat`): damage done, damage taken, healing, deaths. Like combat in WoW, every pack is a fight of its own: the fight clock stops when the last enemy dies, so walking never lowers your DPS. Bosses always get a fight of their own.
 - **The overlay** (`HamMeter.Aion2/UI`): a port of the FFXIV HamMeter's ImGui drawing code onto [ClickableTransparentOverlay](https://github.com/zaafar/ClickableTransparentOverlay).
 
-**Transition:** until HamMeter's reader has been tested in groups, the reader HamMeter first shipped with — built on [Kuroukihime/AIon2-Dps-Meter](https://github.com/Kuroukihime/AIon2-Dps-Meter) (GPL-3.0, git submodule `external/AionDpsMeter`) — is still included and is the default. Switch with *Settings → Data & App → Use HamMeter's own packet reader*. The old reader, the submodule and everything taken from it will be removed once HamMeter's reader is the default.
+**Fallback:** HamMeter's own reader is the default. Until it has been tested in groups, the reader HamMeter first shipped with — built on [Kuroukihime/AIon2-Dps-Meter](https://github.com/Kuroukihime/AIon2-Dps-Meter) (GPL-3.0, git submodule `external/AionDpsMeter`) — stays included as a fallback (*Settings → Data & App → Use the classic packet reader*). It will then be removed together with the submodule.
 
 ## Principles
 
@@ -74,12 +74,12 @@ dotnet build HamMeter.Aion2.slnx
 dotnet test HamMeter.Aion2.slnx
 ```
 
-(`--recurse-submodules` is only needed while the old reader is still included.)
+(`--recurse-submodules` is only needed while the classic reader is still included.)
 
-Run a development build with HamMeter's own reader, without changing the setting:
+Run a development build (add `-- --classic-reader` to use the fallback reader for that run):
 
 ```bash
-dotnet run --project HamMeter.Aion2 -c Release -- --own-reader
+dotnet run --project HamMeter.Aion2 -c Release
 ```
 
 Release build (needs [Inno Setup 6](https://jrsoftware.org/isdl.php): `winget install JRSoftware.InnoSetup`):

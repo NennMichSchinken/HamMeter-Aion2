@@ -479,6 +479,8 @@ other meters' "target" views — so strangers in the open world stay out of the 
 5. ◐ Own entity packets and entity registry — own character, other players and summon
    owners done (`Game/`); entity link (§6.3) and party (§6.4) need a group to test.
 6. ◐ Own game data (§8).
-7. ☐ Compare with the in-game meter (solo: damage, self-heals) and on recordings.
-8. ☐ Make the own reader the default; remove `Classic/`, the submodule, EF Core/SQLite
-   and the `CombatTap` reflection hook.
+7. ◐ Compare with the in-game meter — solo done (damage 1:1, self-heals, bosses in a
+   sealed dungeon); a group test on Global is still open.
+8. ◐ Own reader is the default (classic reader as a fallback). After the group test:
+   remove `Classic/`, the submodule, EF Core/SQLite, the `CombatTap` reflection hook and
+   Kuroukihime's line in `LICENSE`.

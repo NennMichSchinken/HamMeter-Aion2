@@ -59,11 +59,7 @@ public static class Program
                 + "(\"WinPcap API-compatible Mode\") to run without administrator rights.";
         }
 
-        // Kuroukihime's services write appsettings.user.json relative to the working
-        // directory; keep it with our config.
         Directory.CreateDirectory(Config.DataDirectory);
-        Environment.CurrentDirectory = Config.DataDirectory;
-
         Config config = Config.Load();
         var tracker = new EncounterTracker();
 
@@ -79,14 +75,18 @@ public static class Program
             .SetMinimumLevel(LogLevel.Information)
             .AddProvider(new FileLoggerProvider(Path.Combine(Config.DataDirectory, "HamMeter.log"), LogLevel.Information)));
 
-        // --own-reader forces the beta reader for this run without touching the setting.
-        bool own = config.OwnPacketReader || args.Contains("--own-reader", StringComparer.OrdinalIgnoreCase);
+        // HamMeter's own reader; the classic one is a fallback (setting or --classic-reader
+        // for this run only).
+        bool own = config.OwnPacketReader && !args.Contains("--classic-reader", StringComparer.OrdinalIgnoreCase);
         if (own)
         {
             services.AddSingleton<IPacketEngine>(sp => OwnEngine.Live(npcap, tracker, sp.GetRequiredService<ILoggerFactory>()));
         }
         else
         {
+            // Kuroukihime's services write appsettings.user.json relative to the working
+            // directory; keep it with our config.
+            Environment.CurrentDirectory = Config.DataDirectory;
             ClassicEngine.Register(services, npcap);
         }
 
@@ -100,7 +100,7 @@ public static class Program
         ILogger log = sp.GetRequiredService<ILoggerFactory>().CreateLogger("HamMeter");
 
         IPacketEngine engine = sp.GetRequiredService<IPacketEngine>();
-        config.ActiveReader = own ? "HamMeter (beta)" : "Classic";
+        config.ActiveReader = own ? "HamMeter" : "Classic (fallback)";
         log.LogInformation("HamMeter for Aion 2 starting (reader: {Engine}, capture: {Mode}, elevated: {Elevated})",
             engine.Name, npcap ? "Npcap" : "raw socket", elevated);
 

@@ -1,8 +1,8 @@
 namespace HamMeter.Capture;
 
-// The packet side of HamMeter: capture -> parse -> EncounterTracker. Two engines exist
-// while HamMeter moves to its own reader: OwnEngine and the Classic one built on
-// Kuroukihime's library (Config.OwnPacketReader picks one).
+// The packet side of HamMeter: capture -> parse -> EncounterTracker. OwnEngine is the
+// default; the Classic engine stays as a fallback until it is removed
+// (Config.OwnPacketReader picks one).
 public interface IPacketEngine : IDisposable
 {
     string Name { get; }

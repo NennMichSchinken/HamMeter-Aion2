@@ -237,13 +237,6 @@ public static class Replay
             report.AppendLine();
         }
 
-        foreach (ushort op in new ushort[] { 0x364A, 0x8D21, 0x8D03, 0x3741 })
-        {
-            var ids = firstIds.Where(f => f.Op == op).GroupBy(f => f.Id).Select(g => $"{g.Key}x{g.Count()}");
-            report.AppendLine($"First field of {op & 0xFF:X2} {op >> 8:X2}: {string.Join(", ", ids)}");
-        }
-
-        report.AppendLine();
         report.AppendLine("Opcodes (wire order: count):");
         foreach ((ushort op, int count) in opcodes.OrderByDescending(kv => kv.Value))
         {

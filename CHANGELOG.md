@@ -6,6 +6,16 @@ Format (read by HamMeter's "What's new" and the update popup, keep it this way):
   should not skip (e.g. a parser fix after an Aion 2 patch).
 - Each line is `- New: ...`, `- Improved: ...` or `- Fixed: ...`.
 
+## 0.3.0
+- New: HamMeter reads the game with its own packet reader; the old one stays as a fallback under Data & App.
+- New: Fights like combat in WoW: every pack is its own fight and walking between packs no longer lowers your DPS.
+- New: Boss fights get a fight of their own, end with the boss's death and carry a crown in the history.
+- New: Fights are named after the boss or the main target.
+- New: Works with VPN and ping boosters such as LagoFast (needs Npcap).
+- Improved: Your character is recognised right away, with your name after the first kill; players nearby only count on enemies you fight too.
+- Improved: Official class icons, with bar colours that match them.
+- Fixed: The Cleric's self-heal while attacking counts as healing.
+
 ## 0.2.0 - 2026-09-24
 - New: HamMeter checks for updates when it starts (can be turned off) and offers a signed one-click update.
 - New: Version pill and "What's new" in the settings window.

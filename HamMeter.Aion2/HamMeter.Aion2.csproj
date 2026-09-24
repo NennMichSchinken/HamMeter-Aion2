@@ -26,12 +26,13 @@
     <PackageReference Include="SharpPcap" Version="6.3.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.2" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.2" />
-    <!-- Pinned above the transitive versions, which have published security advisories. -->
+    <!-- Pinned above the transitive versions, which have published security advisories.
+         SQLite is only pulled in by the classic reader and goes with it. -->
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
     <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.13" />
   </ItemGroup>
 
-  <!-- Packet capture, parsing and game data come from Kuroukihime's AIon2-Dps-Meter (GPL-3.0). -->
+  <!-- Classic reader (fallback, Classic\): Kuroukihime's AIon2-Dps-Meter (GPL-3.0). Goes with Classic\. -->
   <ItemGroup>
     <ProjectReference Include="..\external\AionDpsMeter\AionDpsMeter.Core\AionDpsMeter.Core.csproj" />
     <ProjectReference Include="..\external\AionDpsMeter\AionDpsMeter.Services\AionDpsMeter.Services.csproj" />

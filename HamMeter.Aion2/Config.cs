@@ -6,7 +6,7 @@ namespace HamMeter;
 
 public class Config
 {
-    public const int CurrentVersion = 4;
+    public const int CurrentVersion = 5;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -59,8 +59,8 @@ public class Config
     // --- Testing ---
     public bool TestMode = false;
 
-    // Beta: HamMeter's own packet reader instead of the classic one (restart needed).
-    public bool OwnPacketReader = false;
+    // HamMeter's own packet reader; false = the classic one as a fallback (restart needed).
+    public bool OwnPacketReader = true;
 
     // The reader this run actually uses (set at start, shown in the settings).
     [JsonIgnore]
@@ -132,6 +132,12 @@ public class Config
                     this.JobColors[job] = now[job];
                 }
             }
+        }
+
+        // v5: HamMeter's own reader became the default. Before, false was just the default.
+        if (this.Version < 5)
+        {
+            this.OwnPacketReader = true;
         }
 
         this.Version = CurrentVersion;
