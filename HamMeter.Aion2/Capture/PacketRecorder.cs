@@ -1,8 +1,7 @@
-using System.Buffers.Binary;
+﻿using System.Buffers.Binary;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
-using AionDpsMeter.Services.PacketCapture;
 using Microsoft.Extensions.Logging;
 
 namespace HamMeter.Capture;
@@ -27,7 +26,6 @@ public sealed class PacketRecorder : IDisposable
     private static readonly byte[] Magic = "HMREC1\0\0"u8.ToArray();
     private static readonly byte[] Entropy = "HamMeter-Aion2 packet recording v1"u8.ToArray();
 
-    private readonly TcpStreamBuffer m_streamBuffer;
     private readonly ILogger<PacketRecorder> m_log;
     private readonly Lock m_sync = new();
     private readonly string m_directory;
@@ -37,17 +35,15 @@ public sealed class PacketRecorder : IDisposable
     private byte[] m_noncePrefix = new byte[4];
     private ulong m_counter;
 
-    public PacketRecorder(TcpStreamBuffer streamBuffer, ILogger<PacketRecorder> log)
-        : this(streamBuffer, log, Path.Combine(Config.DataDirectory, "PacketLogs"))
+    public PacketRecorder(ILogger<PacketRecorder> log)
+        : this(log, Path.Combine(Config.DataDirectory, "PacketLogs"))
     {
     }
 
-    internal PacketRecorder(TcpStreamBuffer streamBuffer, ILogger<PacketRecorder> log, string directory)
+    internal PacketRecorder(ILogger<PacketRecorder> log, string directory)
     {
-        m_streamBuffer = streamBuffer;
         m_log = log;
         m_directory = directory;
-        m_streamBuffer.PacketExtracted += this.OnPacket;
     }
 
     internal string? CurrentFile => m_file?.Name;
@@ -145,9 +141,8 @@ public sealed class PacketRecorder : IDisposable
         m_log.LogInformation("Packet recording stopped");
     }
 
-    private void OnPacket(object? sender, TcpPacketEventArgs e) => this.Record(e.ReceivedAt, e.Payload);
-
-    internal void Record(long unixMs, byte[] payload)
+    // One framed game packet (IPacketEngine.PacketFramed).
+    public void Record(long unixMs, byte[] payload)
     {
         lock (m_sync)
         {
@@ -236,7 +231,6 @@ public sealed class PacketRecorder : IDisposable
 
     public void Dispose()
     {
-        m_streamBuffer.PacketExtracted -= this.OnPacket;
         lock (m_sync)
         {
             this.Close();

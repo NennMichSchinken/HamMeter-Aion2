@@ -1,8 +1,9 @@
 using System.Reflection;
 using AionDpsMeter.Services.PacketProcessing.Routing;
+using HamMeter.Capture;
 using Microsoft.Extensions.Logging;
 
-namespace HamMeter.Capture;
+namespace HamMeter.Classic;
 
 // Kuroukihime's registry maps one processor per opcode and its [PacketOpcode] attribute
 // is internal, so we cannot register a second processor for the combat opcodes. Instead
@@ -45,7 +46,7 @@ public static class CombatTap
                 logger.LogDebug(ex, "Upstream processor failed for opcode 0x{Opcode:X4}", opcode);
             }
 
-            parser.Process(opcode, packet);
+            parser.Process(opcode, packet.Data);
         }
     }
 }

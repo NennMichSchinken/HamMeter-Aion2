@@ -1,15 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
-using AionDpsMeter.Services.Extensions;
-using AionDpsMeter.Services.Models;
-using AionDpsMeter.Services.PacketCapture;
-using AionDpsMeter.Services.PacketProcessing.Routing;
-using AionDpsMeter.Services.Services;
-using AionDpsMeter.Services.Services.Entity;
-using AionDpsMeter.Services.Services.Session;
-using AionDpsMeter.Services.Services.Session.Persistence;
-using AionDpsMeter.Services.Services.Settings;
 using HamMeter.Capture;
+using HamMeter.Classic;
 using HamMeter.Combat;
 using HamMeter.UI;
 using HamMeter.Wizard;
@@ -27,6 +19,15 @@ public static class Program
         {
             using var wizard = new WizardWindow(new UninstallFlow());
             await wizard.Run();
+            return;
+        }
+
+        // Development: run a packet recording through HamMeter's own reader and write
+        // a report next to it. Only the Windows account that recorded it can read it.
+        int replay = Array.FindIndex(args, a => a.Equals("--replay", StringComparison.OrdinalIgnoreCase));
+        if (replay >= 0 && replay + 1 < args.Length)
+        {
+            Replay.Run(args[replay + 1]);
             return;
         }
 
@@ -78,29 +79,18 @@ public static class Program
             .SetMinimumLevel(LogLevel.Information)
             .AddProvider(new FileLoggerProvider(Path.Combine(Config.DataDirectory, "HamMeter.log"), LogLevel.Information)));
 
-        // Same registrations as Kuroukihime's App.xaml.cs, minus their WPF UI, their
-        // update checker (no network access at all), their SQLite history (nothing is
-        // persisted) and their plaintext packet log (see PacketRecorder).
-        services.AddSingleton<ICombatHistoryStore, NullCombatHistoryStore>();
-        services.AddSingleton<IAppSettingsService, AppSettingsService>();
-        services.AddSingleton<TcpStreamBuffer>();
-        if (npcap)
+        // --own-reader forces the beta reader for this run without touching the setting.
+        bool own = config.OwnPacketReader || args.Contains("--own-reader", StringComparer.OrdinalIgnoreCase);
+        if (own)
         {
-            services.AddSingleton<IPacketCaptureDevice, CaptureDevice>();
+            services.AddSingleton<IPacketEngine>(sp => OwnEngine.Live(npcap, tracker, sp.GetRequiredService<ILoggerFactory>()));
         }
         else
         {
-            services.AddSingleton<RawSocketCaptureDevice>();
-            services.AddSingleton<IPacketCaptureDevice>(sp => sp.GetRequiredService<RawSocketCaptureDevice>());
+            ClassicEngine.Register(services, npcap);
         }
 
-        services.AddSingleton<EntityTracker>();
-        services.AddSingleton<CombatSessionManager>();
-        services.AddPacketProcessingRouting();
-        services.AddSingleton<IPacketService, PacketPipelineService>();
-
         services.AddSingleton(tracker);
-        services.AddSingleton<CombatPacketParser>();
         services.AddSingleton<PacketRecorder>();
         services.AddSingleton(config);
         services.AddSingleton<Update.UpdateService>();
@@ -108,20 +98,29 @@ public static class Program
 
         await using ServiceProvider sp = services.BuildServiceProvider();
         ILogger log = sp.GetRequiredService<ILoggerFactory>().CreateLogger("HamMeter");
-        log.LogInformation("HamMeter for Aion 2 starting (capture: {Mode}, elevated: {Elevated})", npcap ? "Npcap" : "raw socket", elevated);
 
-        CombatTap.Install(sp.GetRequiredService<OpcodeProcessorRegistry>(), sp.GetRequiredService<CombatPacketParser>(), log);
+        IPacketEngine engine = sp.GetRequiredService<IPacketEngine>();
+        config.ActiveReader = own ? "HamMeter (beta)" : "Classic";
+        log.LogInformation("HamMeter for Aion 2 starting (reader: {Engine}, capture: {Mode}, elevated: {Elevated})",
+            engine.Name, npcap ? "Npcap" : "raw socket", elevated);
 
         PacketRecorder recorder = sp.GetRequiredService<PacketRecorder>();
         recorder.DeleteExpired();
+        engine.PacketFramed += recorder.Record;
 
-        IPacketService packets = sp.GetRequiredService<IPacketService>();
-        IPacketCaptureDevice capture = sp.GetRequiredService<IPacketCaptureDevice>();
+        tracker.Finished += encounter =>
+        {
+            if (engine.SkillLog?.Drain() is { } skills)
+            {
+                log.LogInformation("Fight ended after {Duration}.\n{Skills}", encounter.Duration, skills);
+            }
+        };
+
         if (captureError is null)
         {
             try
             {
-                packets.Start();
+                engine.Start();
             }
             catch (Exception ex)
             {
@@ -137,13 +136,13 @@ public static class Program
                 return captureError;
             }
 
-            if (capture is RawSocketCaptureDevice { LooksBlocked: true })
+            if (engine.LooksBlocked)
             {
                 return "Aion 2 is connected, but no game packets arrive.\n\n"
                     + "Windows Firewall is probably blocking HamMeter. Allow HamMeter in the firewall, or install Npcap.";
             }
 
-            return capture.DeviceName is null ? "Waiting for Aion 2...\n\nStart the game and log in to a character." : null;
+            return engine.DeviceName is null ? "Waiting for Aion 2...\n\nStart the game and log in to a character." : null;
         }
 
         using (var overlay = new HamMeterOverlay(config, tracker, Status, sp.GetRequiredService<Update.UpdateController>()))
@@ -176,8 +175,9 @@ public static class Program
             await overlay.Run();
         }
 
+        engine.PacketFramed -= recorder.Record;
         recorder.Dispose();
-        packets.Stop();
+        engine.Stop();
         if (!preview)
         {
             config.Save();

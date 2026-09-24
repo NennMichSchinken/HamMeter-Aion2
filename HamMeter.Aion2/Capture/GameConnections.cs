@@ -11,14 +11,17 @@ public readonly record struct TcpConnection(uint LocalAddress, ushort LocalPort,
     public IPAddress Local => new(this.LocalAddress);
 }
 
-// Lists the TCP connections owned by the Aion 2 client. The raw-socket capture only
-// accepts packets that belong to one of these, so traffic of every other program on
-// the machine is dropped before any of its bytes are looked at.
+// Lists the TCP connections owned by the Aion 2 client. The capture only accepts
+// packets that belong to one of these, so traffic of every other program on the
+// machine is dropped before any of its bytes are looked at.
 public static class GameConnections
 {
     private const string ProcessName = "Aion2";
 
-    public static List<TcpConnection> Find()
+    public static bool IsLoopback(uint address) => (address & 0xFF) == 127;
+
+    // Loopback connections are VPN/booster tunnels: only Npcap can see those.
+    public static List<TcpConnection> Find(bool includeLoopback)
     {
         HashSet<int> pids = new();
         foreach (Process p in Process.GetProcessesByName(ProcessName))
@@ -40,8 +43,7 @@ public static class GameConnections
                 continue;
             }
 
-            // Loopback connections (VPN/booster tunnels) never reach a raw socket.
-            if ((row.RemoteAddr & 0xFF) == 127)
+            if (!includeLoopback && IsLoopback(row.RemoteAddr))
             {
                 continue;
             }

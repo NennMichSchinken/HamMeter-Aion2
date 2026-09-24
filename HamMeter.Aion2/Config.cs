@@ -6,13 +6,15 @@ namespace HamMeter;
 
 public class Config
 {
-    public int Version { get; set; } = 1;
+    public const int CurrentVersion = 2;
+
+    public int Version { get; set; } = CurrentVersion;
 
     // --- Display ---
     public bool OnlyInCombat = false;
     public bool ConfirmReset = true;
     public bool Locked = false;
-    public float CombatTimeout = 10f;
+    public float CombatTimeout = 30f;
     public float BackgroundOpacity = 0.8f;
     public Vector4 BackgroundColor = new(0.086f, 0.086f, 0.102f, 1f); // #16161A (settings window bg)
 
@@ -56,6 +58,13 @@ public class Config
     // --- Testing ---
     public bool TestMode = false;
 
+    // Beta: HamMeter's own packet reader instead of the classic one (restart needed).
+    public bool OwnPacketReader = false;
+
+    // The reader this run actually uses (set at start, shown in the settings).
+    [JsonIgnore]
+    public string ActiveReader = string.Empty;
+
     // --- Updates ---
     // null = not chosen here yet: the installer's choice applies (default: on).
     public bool? CheckForUpdates = null;
@@ -94,8 +103,21 @@ public class Config
             config = new Config();
         }
 
+        config.Migrate();
         config.EnsureJobColors();
         return config;
+    }
+
+    private void Migrate()
+    {
+        // v2: the combat timeout default went from 10 to 30 s (fights no longer split
+        // while walking to the next mob). Only the old default is moved along.
+        if (this.Version < 2 && Math.Abs(this.CombatTimeout - 10f) < 0.01f)
+        {
+            this.CombatTimeout = 30f;
+        }
+
+        this.Version = CurrentVersion;
     }
 
     public void EnsureJobColors()

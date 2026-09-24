@@ -1,7 +1,7 @@
 using AionDpsMeter.Services.Services.Session;
 using AionDpsMeter.Services.Services.Session.Persistence;
 
-namespace HamMeter.Capture;
+namespace HamMeter.Classic;
 
 // Data minimisation: Kuroukihime's CombatSessionManager persists every fight (player
 // names, damage) to a SQLite file. HamMeter keeps its history in memory only, so this

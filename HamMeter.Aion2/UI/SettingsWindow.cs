@@ -187,9 +187,10 @@ public sealed class SettingsWindow
                 changed |= CheckboxRow("Only show in combat", ref m_config.OnlyInCombat);
                 changed |= CheckboxRow("Confirm before reset", ref m_config.ConfirmReset);
                 ImGui.Dummy(new Vector2(0f, 6f));
-                changed |= SliderWhole("Combat timeout (s)", ref m_config.CombatTimeout, 3f, 30f);
+                changed |= SliderWhole("Combat timeout (s)", ref m_config.CombatTimeout, 3f, 120f);
                 ImGui.Indent(24f);
                 ImGui.TextDisabled("A fight ends after this many seconds without damage.");
+                ImGui.TextDisabled("Walking between mobs does not count as fight time.");
                 ImGui.Unindent(24f);
                 ImGui.Dummy(new Vector2(0f, 6f));
                 changed |= Slider("Background opacity", ref m_config.BackgroundOpacity, 0f, 1f);
@@ -320,6 +321,13 @@ public sealed class SettingsWindow
                 ImGui.TextDisabled("Saves the game traffic so a fight can be replayed and checked.");
                 ImGui.TextDisabled("Encrypted, readable only by your Windows account.");
                 ImGui.TextDisabled($"Turns off on restart, deleted after {Capture.PacketRecorder.RetentionDays} days.");
+                ImGui.Unindent(24f);
+                changed |= CheckboxRow("Use HamMeter's own packet reader (beta)", ref m_config.OwnPacketReader);
+                ImGui.Indent(24f);
+                ImGui.TextDisabled("Takes effect after restarting HamMeter.");
+                ImGui.TextDisabled($"Active now: {m_config.ActiveReader}");
+                ImGui.TextDisabled("Writes per-skill totals to HamMeter.log after each fight,");
+                ImGui.TextDisabled("to compare with the in-game meter.");
                 ImGui.Unindent(24f);
                 SubHeading("Updates");
                 bool checkOnStart = m_updates.CheckOnStart;

@@ -1,52 +1,62 @@
-using AionDpsMeter.Core.GameData.Services;
-using AionDpsMeter.Core.Models;
-using AionDpsMeter.Services.PacketProcessing.Routing;
-using AionDpsMeter.Services.PacketProcessing.Shared;
-using AionDpsMeter.Services.Services.Entity;
 using HamMeter.Combat;
+using HamMeter.Game;
+using HamMeter.Protocol;
 using Microsoft.Extensions.Logging;
 
 namespace HamMeter.Capture;
 
-// Reads the combat opcodes a second time for HamMeter. Kuroukihime's processors only
-// keep player damage; this parser also keeps what they drop:
+// Turns the combat packets into HamMeter events (docs/protocol.md §5):
+//   - damage done by players and their summons,
 //   - healing (heal skills on 04 38, heal/HoT effect types on 05 38),
-//   - damage taken (NPC actors hitting a known player),
-//   - deaths of every known player.
-// The byte layout follows Kuroukihime's DamagePacketProcessor / DotDamagePacketProcessor;
-// the heal effect types and the NPC-skill rule for damage taken follow A2Tools.
+//   - damage taken (non-player actors hitting a known player),
+//   - deaths of every known player, and of monsters (they pause the fight clock).
+// Who is who comes from an IEntityDirectory, what skill codes mean from ISkillRules.
 public sealed class CombatPacketParser
 {
     private const long MaxAmount = 99_999_999;
 
-    private readonly EntityTracker m_entities;
+    private readonly IEntityDirectory m_entities;
+    private readonly ISkillRules m_skills;
     private readonly EncounterTracker m_tracker;
-    private readonly GameDataProvider m_gameData = GameDataProvider.Instance;
     private readonly ILogger<CombatPacketParser> m_log;
 
-    public CombatPacketParser(EntityTracker entities, EncounterTracker tracker, ILogger<CombatPacketParser> log)
+    public CombatPacketParser(IEntityDirectory entities, ISkillRules skills, EncounterTracker tracker, ILogger<CombatPacketParser> log)
     {
         m_entities = entities;
+        m_skills = skills;
         m_tracker = tracker;
         m_log = log;
 
         m_entities.SummonRegistered += this.OnSummonRegistered;
     }
 
-    public void Process(ushort opcode, Packet packet)
+    // Time of the packet being parsed; a replay sets it to the recorded time.
+    public Func<DateTime> Clock { get; set; } = () => DateTime.Now;
+
+    // Per-skill totals for checking against the in-game meter; null = not collected.
+    public SkillLog? SkillLog { get; set; }
+
+    public void Register(PacketRouter router)
+    {
+        router.On(Opcodes.Hit, p => this.Process(Opcodes.Hit, p));
+        router.On(Opcodes.Tick, p => this.Process(Opcodes.Tick, p));
+        router.On(Opcodes.Death, p => this.Process(Opcodes.Death, p));
+    }
+
+    public void Process(ushort opcode, byte[] packet)
     {
         try
         {
             switch (opcode)
             {
-                case PacketOpcodes.Damage:
-                    this.ProcessHit(packet.Data);
+                case Opcodes.Hit:
+                    this.ProcessHit(packet);
                     break;
-                case PacketOpcodes.DotDamage:
-                    this.ProcessEffect(packet.Data);
+                case Opcodes.Tick:
+                    this.ProcessTick(packet);
                     break;
-                case PacketOpcodes.EntityDeath:
-                    this.ProcessDeath(packet.Data);
+                case Opcodes.Death:
+                    this.ProcessDeath(packet);
                     break;
             }
         }
@@ -60,38 +70,41 @@ public sealed class CombatPacketParser
 
     // ----- 04 38: direct hit / direct heal ------------------------------------------
 
-    private void ProcessHit(byte[] data)
+    private void ProcessHit(byte[] packet)
     {
-        var reader = new PacketReader(data);
-        reader.ReadVarInt(); // length
-        reader.ReadU16();    // opcode
+        PacketReader reader = PacketReader.Body(packet);
 
         int targetId = (int)reader.ReadVarInt();
-        int switchValue = SwitchValue((int)reader.ReadVarInt());
-        if (switchValue < 0)
+        int layout = LayoutSwitch(reader.ReadVarInt());
+        if (layout < 0)
         {
             return;
         }
 
-        reader.ReadVarInt(); // unknown flag
+        reader.ReadVarInt(); // unknown
         int actorId = (int)reader.ReadVarInt();
         int skillCode = (int)reader.ReadU32();
-        if (skillCode < 1 || skillCode > 299_999_999)
+        if (skillCode is < 1 or > 299_999_999)
         {
             return;
         }
 
-        reader.ReadU8(); // unknown
-        reader.ReadVarInt(); // damage type (crit = 3)
-        SkipSpecialBlock(reader, switchValue);
-        reader.ReadVarInt(); // actor power scalar
+        reader.ReadU8();      // unknown
+        reader.ReadVarInt();  // hit type (3 = critical)
+        if (layout != 4)
+        {
+            reader.Skip(3);   // hit flags, unknown, direction
+        }
+
+        reader.Skip(8);       // unknown
+        reader.ReadVarInt();  // scales with the actor's power
         long amount = reader.ReadVarInt();
-        if (amount <= 0 || amount > MaxAmount)
+        if (amount is <= 0 or > MaxAmount)
         {
             return;
         }
 
-        DateTime now = DateTime.Now;
+        DateTime now = this.Clock();
         PlayerRef? source = this.ResolveSource(actorId, skillCode);
 
         if (source is null)
@@ -100,56 +113,49 @@ public sealed class CombatPacketParser
             // target is a known player, that's damage taken.
             if (actorId != targetId && this.ResolvePlayer(targetId) is { } victim)
             {
-                m_tracker.DamageTaken(now, victim, amount);
+                m_tracker.DamageTaken(now, victim, amount, actorId);
             }
 
             return;
         }
 
-        if (m_gameData.IsHealingSkill(skillCode))
+        if (m_skills.IsHealing(skillCode))
         {
             // Self-casts (actor == target) are instant self-heals.
             PlayerRef? healed = actorId == targetId ? source : this.ResolvePlayer(targetId);
             m_tracker.Healing(now, source.Value, healed, amount);
+            this.SkillLog?.Add(source.Value, "heal", skillCode, amount);
             return;
         }
 
         if (actorId == targetId)
         {
+            // A self-cast that is not a known heal: listed so missing heal skills show up.
+            this.SkillLog?.Add(source.Value, "self?", skillCode, amount);
             return;
         }
 
-        m_tracker.DamageDone(now, source.Value, amount, targetId, this.TargetName(targetId));
+        m_tracker.DamageDone(now, source.Value, amount, targetId, m_entities.TargetName(targetId), m_entities.IsBoss(targetId));
+        this.SkillLog?.Add(source.Value, "hit", skillCode, amount);
     }
 
-    private static int SwitchValue(int raw)
+    // Valid only if it fits a byte and the low nibble is 4-7.
+    private static int LayoutSwitch(uint raw)
     {
         if (raw > 255)
         {
             return -1;
         }
 
-        int v = raw & 0x0F;
+        int v = (int)(raw & 0x0F);
         return v is >= 4 and <= 7 ? v : -1;
-    }
-
-    private static void SkipSpecialBlock(PacketReader reader, int switchValue)
-    {
-        if (switchValue != 4)
-        {
-            reader.Skip(3); // damage flags, unknown, attack direction
-        }
-
-        reader.Skip(8); // unknown u32 + 4 tail bytes
     }
 
     // ----- 05 38: damage-over-time / heal-over-time tick ------------------------------
 
-    private void ProcessEffect(byte[] data)
+    private void ProcessTick(byte[] packet)
     {
-        var reader = new PacketReader(data);
-        reader.ReadVarInt(); // length
-        reader.ReadU16();    // opcode
+        PacketReader reader = PacketReader.Body(packet);
 
         int targetId = (int)reader.ReadVarInt();
 
@@ -164,14 +170,14 @@ public sealed class CombatPacketParser
 
         int actorId = (int)reader.ReadVarInt();
         reader.ReadVarInt(); // unknown
-        int skillCode = (int)reader.ReadU32() / 100;
+        int skillCode = (int)(reader.ReadU32() / 100);
         long amount = reader.ReadVarInt();
-        if (amount <= 0 || amount > MaxAmount)
+        if (amount is <= 0 or > MaxAmount)
         {
             return;
         }
 
-        DateTime now = DateTime.Now;
+        DateTime now = this.Clock();
         PlayerRef? source = this.ResolveSource(actorId, skillCode);
 
         if (isHeal)
@@ -183,6 +189,7 @@ public sealed class CombatPacketParser
 
             PlayerRef? healed = actorId == targetId ? source : this.ResolvePlayer(targetId);
             m_tracker.Healing(now, source.Value, healed, amount);
+            this.SkillLog?.Add(source.Value, "hot", skillCode, amount);
             return;
         }
 
@@ -195,34 +202,37 @@ public sealed class CombatPacketParser
         {
             if (this.ResolvePlayer(targetId) is { } victim)
             {
-                m_tracker.DamageTaken(now, victim, amount);
+                m_tracker.DamageTaken(now, victim, amount, actorId);
             }
 
             return;
         }
 
-        // Same gate as Kuroukihime: only curated DoT skills count as damage ticks.
-        if (!m_gameData.IsTheostone(skillCode)
-            && (!m_gameData.IsDotDamageSkill(skillCode) || m_gameData.IsHealingSkill(skillCode)))
+        if (!m_skills.IsTheostone(skillCode) && !m_skills.CountsAsTickDamage(skillCode))
         {
+            this.SkillLog?.Add(source.Value, "tick-ignored", skillCode, amount);
             return;
         }
 
-        m_tracker.DamageDone(now, source.Value, amount, targetId, this.TargetName(targetId));
+        m_tracker.DamageDone(now, source.Value, amount, targetId, m_entities.TargetName(targetId), m_entities.IsBoss(targetId));
+        this.SkillLog?.Add(source.Value, "tick", skillCode, amount);
     }
 
     // ----- 04 8D: death ---------------------------------------------------------------
 
-    private void ProcessDeath(byte[] data)
+    private void ProcessDeath(byte[] packet)
     {
-        var reader = new PacketReader(data);
-        reader.ReadVarInt(); // length
-        reader.ReadU16();    // opcode
+        PacketReader reader = PacketReader.Body(packet);
         int entityId = (int)reader.ReadVarInt();
 
         if (this.ResolvePlayer(entityId) is { } player)
         {
-            m_tracker.Death(DateTime.Now, player);
+            m_tracker.Death(this.Clock(), player);
+        }
+        else if (m_entities.Player(entityId) is null && !m_entities.IsSummon(entityId))
+        {
+            // A monster: once the last engaged one is dead the fight clock pauses.
+            m_tracker.EnemyDied(this.Clock(), entityId);
         }
     }
 
@@ -232,7 +242,7 @@ public sealed class CombatPacketParser
     // encoded in the skill code decides whether the actor is a player at all.
     private PlayerRef? ResolveSource(int actorId, int skillCode)
     {
-        if (m_entities.GetSummonOwner(actorId) is int ownerId)
+        if (m_entities.SummonOwner(actorId) is int ownerId)
         {
             return this.ResolvePlayer(ownerId) ?? new PlayerRef(ownerId, $"Player_{ownerId}", string.Empty, false);
         }
@@ -242,21 +252,20 @@ public sealed class CombatPacketParser
             return null;
         }
 
-        CharacterClass? cls = m_gameData.IsTheostone(skillCode)
-            ? m_entities.GetPlayerEntity(actorId)?.CharacterClass
-            : m_gameData.GetClassBySkillCode(skillCode);
-        if (cls is null)
+        long? classId = m_skills.IsTheostone(skillCode)
+            ? m_entities.Player(actorId)?.ClassId
+            : m_skills.ClassOf(skillCode);
+        if (classId is not > 0)
         {
             return null;
         }
 
-        Player player = m_entities.GetOrCreateSessionPlayer(actorId, cls);
-        return ToRef(player);
+        return ToRef(m_entities.AddPlayer(actorId, classId.Value));
     }
 
-    // Mirrors Kuroukihime's DataValidationHelper.IsReasonableSkillCode (internal there).
-    // The class is read from the first two digits of a skill code, so 7-digit NPC skills
-    // (e.g. 12xxxxx) must be rejected here or they would pass as a class-12 player.
+    // docs/protocol.md §7. The class is read from the first two digits of a skill code,
+    // so 7-digit NPC skills (e.g. 12xxxxx) must be rejected here or they would pass as a
+    // class-12 player.
     private static bool IsPlayerSkillCode(int code)
     {
         if (code is < 1 or > 299_999_999)
@@ -300,23 +309,13 @@ public sealed class CombatPacketParser
             return null;
         }
 
-        Player? player = m_entities.GetPlayerEntity(entityId);
-        return player is null ? null : ToRef(player);
+        return m_entities.Player(entityId) is { } p ? ToRef(p) : null;
     }
 
-    private static PlayerRef ToRef(Player p)
+    private static PlayerRef ToRef(KnownPlayer p)
     {
-        long classId = p.CharacterClass?.Id ?? 0;
-        string name = classId == ClassInfo.SpiritClassId && p.Name.StartsWith("Player_", StringComparison.Ordinal)
-            ? "Spirit"
-            : p.Name;
-        return new PlayerRef(p.Id, name, ClassInfo.KeyFromId(classId), p.IsUser);
-    }
-
-    private string TargetName(int targetId)
-    {
-        Mob? mob = m_entities.GetTargetMob(targetId);
-        return mob is null || mob.MobCode == 0 ? string.Empty : mob.Name;
+        string name = p.Name ?? (p.ClassId == ClassInfo.SpiritClassId ? "Spirit" : $"Player_{p.Id}");
+        return new PlayerRef(p.Id, name, ClassInfo.KeyFromId(p.ClassId), p.IsUser);
     }
 
     private void OnSummonRegistered(int summonId, int ownerId)

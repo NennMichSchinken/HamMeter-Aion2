@@ -1,13 +1,13 @@
-using AionDpsMeter.Services.PacketProcessing.Routing;
-using AionDpsMeter.Services.Services.Entity;
 using HamMeter.Capture;
 using HamMeter.Combat;
+using HamMeter.Game;
+using HamMeter.Protocol;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace HamMeter.Tests;
 
-// Synthetic packets in Kuroukihime's byte layout. They check HamMeter's classification
+// Synthetic packets in the layout of docs/protocol.md §5. They check HamMeter's classification
 // (damage / heal / damage taken / death), not the real game's byte layout.
 public class CombatPacketParserTests
 {
@@ -16,15 +16,16 @@ public class CombatPacketParserTests
     private const int Mob = 5000;
 
     private const int GladiatorSkill = 11_020_000;
-    private const int ClericHeal = 17_120_000;     // listed in healing_skill_ids.json
+    private const int ClericHeal = 17_120_000;     // a heal family in SkillRules
     private const int NpcSkill = 1_234_567;        // 7-digit NPC skill, "12" must NOT read as Templar
 
     private readonly EncounterTracker m_tracker = new();
+    private readonly EntityRegistry m_entities = new();
     private readonly CombatPacketParser m_parser;
 
     public CombatPacketParserTests()
     {
-        m_parser = new CombatPacketParser(new EntityTracker(), m_tracker, NullLogger<CombatPacketParser>.Instance);
+        m_parser = new CombatPacketParser(m_entities, new SkillRules(), m_tracker, NullLogger<CombatPacketParser>.Instance);
     }
 
     [Fact]
@@ -97,7 +98,7 @@ public class CombatPacketParserTests
     public void Death_OfKnownPlayer_IsCounted()
     {
         this.Hit(Gladiator, Mob, GladiatorSkill, 1_000);
-        m_parser.Process(PacketOpcodes.EntityDeath, Packet(0x8D04, w => w.VarInt(Gladiator)));
+        m_parser.Process(Opcodes.Death, Packet(Opcodes.Death, w => w.VarInt(Gladiator)));
 
         Assert.Equal(1, this.Player(Gladiator).DeathCount);
     }
@@ -115,13 +116,153 @@ public class CombatPacketParserTests
         Assert.Equal(1_000, m_tracker.Current!.Combatants.Single().DamageTotal);
     }
 
+    [Fact]
+    public void ChainPulls_StayOneFight_AndWalkingIsNotFightTime()
+    {
+        DateTime t0 = new(2026, 9, 24, 12, 0, 0);
+        DateTime now = t0;
+        m_parser.Clock = () => now;
+
+        this.Hit(Gladiator, Mob, GladiatorSkill, 1_000);
+        now = t0.AddSeconds(4);
+        this.Hit(Gladiator, Mob, GladiatorSkill, 1_000);
+        this.Died(Mob);                                   // clock pauses: 4 s so far
+
+        now = t0.AddSeconds(20);                          // 16 s walking to the next mob
+        m_tracker.Tick(now);
+        this.Hit(Gladiator, Mob + 1, GladiatorSkill, 1_000);
+        now = t0.AddSeconds(25);
+        this.Hit(Gladiator, Mob + 1, GladiatorSkill, 1_000);
+        this.Died(Mob + 1);                               // 4 + 5 = 9 s
+
+        m_tracker.Tick(t0.AddSeconds(60));
+
+        Assert.Equal(1, m_tracker.PastCount);
+        EncounterSnapshot fight = m_tracker.GetPast(0)!;
+        Assert.Equal(9, fight.Seconds, 3);
+        Assert.Equal(4_000, fight.Combatants.Single().DamageTotal);
+    }
+
+    [Fact]
+    public void WithoutDeaths_TheClockRunsUntilTheLastHit()
+    {
+        DateTime t0 = new(2026, 9, 24, 12, 0, 0);
+        DateTime now = t0;
+        m_parser.Clock = () => now;
+
+        this.Hit(Gladiator, Mob, GladiatorSkill, 1_000);
+        now = t0.AddSeconds(20);
+        this.Hit(Gladiator, Mob, GladiatorSkill, 1_000);
+        m_tracker.Tick(t0.AddSeconds(60));
+
+        Assert.Equal(20, m_tracker.GetPast(0)!.Seconds, 3);
+    }
+
+    [Fact]
+    public void LongerThanTheTimeout_StartsANewFight()
+    {
+        DateTime t0 = new(2026, 9, 24, 12, 0, 0);
+        DateTime now = t0;
+        m_parser.Clock = () => now;
+
+        this.Hit(Gladiator, Mob, GladiatorSkill, 1_000);
+        this.Died(Mob);
+        m_tracker.Tick(t0.AddSeconds(31));               // default timeout: 30 s
+        now = t0.AddSeconds(40);
+        this.Hit(Gladiator, Mob + 1, GladiatorSkill, 1_000);
+
+        Assert.Equal(1, m_tracker.PastCount);
+        Assert.True(m_tracker.InCombat);
+    }
+
+    [Fact]
+    public void AnEnemyStillHittingUs_KeepsTheClockRunning()
+    {
+        DateTime t0 = new(2026, 9, 24, 12, 0, 0);
+        DateTime now = t0;
+        m_parser.Clock = () => now;
+
+        this.Hit(Gladiator, Mob, GladiatorSkill, 1_000);
+        this.Hit(Mob + 1, Gladiator, NpcSkill, 100);     // a second mob joins in
+        now = t0.AddSeconds(3);
+        this.Died(Mob);                                   // one of two dead: keeps running
+        now = t0.AddSeconds(10);
+        this.Hit(Mob + 1, Gladiator, NpcSkill, 100);
+        this.Died(Mob + 1);
+        m_tracker.Tick(t0.AddSeconds(60));
+
+        Assert.Equal(10, m_tracker.GetPast(0)!.Seconds, 3);
+    }
+
+    [Fact]
+    public void Boss_GetsItsOwnFight_EvenRightAfterTrash_AndEndsWithItsDeath()
+    {
+        const int Boss = 9000;
+        m_entities.SetMobCode(Mob, 2100456);  // Red Cap Fungen (trash)
+        m_entities.SetMobCode(Boss, 2300000); // Submerged Emon (boss)
+
+        DateTime t0 = new(2026, 9, 24, 12, 0, 0);
+        DateTime now = t0;
+        m_parser.Clock = () => now;
+
+        this.Hit(Gladiator, Mob, GladiatorSkill, 1_000);
+        this.Died(Mob);
+        now = t0.AddSeconds(10);                          // well inside the 30 s window
+        this.Hit(Gladiator, Boss, GladiatorSkill, 5_000);
+
+        Assert.Equal(1, m_tracker.PastCount);             // trash closed on the first boss hit
+        Assert.Equal("Red Cap Fungen", m_tracker.GetPast(0)!.Title);
+        Assert.Equal("Submerged Emon", m_tracker.Current!.Title);
+
+        now = t0.AddSeconds(40);
+        this.Hit(Gladiator, Boss, GladiatorSkill, 5_000);
+        this.Died(Boss);                                  // no timeout needed
+
+        Assert.False(m_tracker.InCombat);
+        Assert.Equal(2, m_tracker.PastCount);
+        EncounterSnapshot boss = m_tracker.GetPast(1)!;
+        Assert.Equal(10_000, boss.Combatants.Single().DamageTotal);
+        Assert.Equal(30, boss.Seconds, 3);
+
+        now = t0.AddSeconds(45);                          // trash after the boss: a new fight
+        this.Hit(Gladiator, Mob + 1, GladiatorSkill, 1_000);
+        Assert.Equal(1_000, m_tracker.Current!.Combatants.Single().DamageTotal);
+    }
+
+    [Fact]
+    public void AddsDuringABoss_StayInTheBossFight()
+    {
+        const int Boss = 9000;
+        m_entities.SetMobCode(Boss, 2300000);
+
+        this.Hit(Gladiator, Boss, GladiatorSkill, 5_000);
+        this.Hit(Gladiator, Mob, GladiatorSkill, 1_000);  // an add
+        this.Died(Mob);
+
+        Assert.Equal(0, m_tracker.PastCount);
+        Assert.Equal(6_000, m_tracker.Current!.Combatants.Single().DamageTotal);
+    }
+
+    [Fact]
+    public void MonsterList_HasNamesBossFlagsAndDungeons()
+    {
+        Assert.True(NpcData.Count > 9_000);
+        Assert.Equal(new NpcInfo("Red Cap Fungen", false, false, null, null), NpcData.Get(2100456));
+        NpcInfo boss = NpcData.Get(2300000)!;
+        Assert.True(boss.IsBoss);
+        Assert.Equal("Transcendence", boss.Category);
+        Assert.Null(NpcData.Get(1));
+    }
+
     // ----- helpers ---------------------------------------------------------------------
+
+    private void Died(int entity) => m_parser.Process(Opcodes.Death, Packet(Opcodes.Death, w => w.VarInt(entity)));
 
     private Combatant Player(int id) => m_tracker.Current!.Combatants.Single(c => c.Id == id);
 
     // 04 38 with switch value 5 (3 flag bytes + 8 unknown bytes before the values).
     private void Hit(int actor, int target, int skill, int amount) =>
-        m_parser.Process(PacketOpcodes.Damage, Packet(0x3804, w =>
+        m_parser.Process(Opcodes.Hit, Packet(Opcodes.Hit, w =>
         {
             w.VarInt(target);
             w.VarInt(5);      // switch value
@@ -138,7 +279,7 @@ public class CombatPacketParserTests
 
     // 05 38: target, effect type, actor, unknown, skill * 100, amount.
     private void Effect(int target, int actor, byte effectType, int skill, int amount) =>
-        m_parser.Process(PacketOpcodes.DotDamage, Packet(0x3805, w =>
+        m_parser.Process(Opcodes.Tick, Packet(Opcodes.Tick, w =>
         {
             w.VarInt(target);
             w.U8(effectType);
@@ -148,21 +289,21 @@ public class CombatPacketParserTests
             w.VarInt(amount);
         }));
 
-    private static Packet Packet(ushort opcode, Action<Writer> body)
+    internal static byte[] Packet(ushort opcode, Action<Writer> body)
     {
         var w = new Writer();
         body(w);
         byte[] payload = w.ToArray();
 
         var p = new Writer();
-        p.VarInt(payload.Length + 2);
+        p.VarInt(payload.Length + 6); // size = value + length bytes - 4 (docs/protocol.md §2)
         p.U8((byte)(opcode & 0xFF));
         p.U8((byte)(opcode >> 8));
         p.Raw(payload);
-        return new Packet { Data = p.ToArray() };
+        return p.ToArray();
     }
 
-    private sealed class Writer
+    internal sealed class Writer
     {
         private readonly List<byte> m_bytes = new();
 

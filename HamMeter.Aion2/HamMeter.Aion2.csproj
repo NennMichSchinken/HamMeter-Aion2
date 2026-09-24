@@ -21,6 +21,9 @@
 
   <ItemGroup>
     <PackageReference Include="ClickableTransparentOverlay" Version="11.1.0" />
+    <!-- HamMeter's own packet reader: LZ4 for "FF FF" bundles, SharpPcap for Npcap capture. -->
+    <PackageReference Include="K4os.Compression.LZ4" Version="1.3.8" />
+    <PackageReference Include="SharpPcap" Version="6.3.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.2" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.2" />
     <!-- Pinned above the transitive versions, which have published security advisories. -->
@@ -36,6 +39,8 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Assets\Icons\*.svg" LogicalName="HamMeter.Icons.%(Filename)%(Extension)" />
+    <!-- Monster names and boss flags from A2Tools-DPS-Meter (taengu, GPL-3.0), see Game\Data\SOURCE.md. -->
+    <EmbeddedResource Include="Game\Data\npcs.json" LogicalName="HamMeter.Npcs.json" />
     <!-- Patch notes for "What's new" and the key that update signatures are checked against. -->
     <EmbeddedResource Include="..\CHANGELOG.md" LogicalName="HamMeter.CHANGELOG.md" />
     <EmbeddedResource Include="Update\release-public-key.txt" LogicalName="HamMeter.ReleasePublicKey" />
