@@ -48,6 +48,10 @@ public static class Replay
         // First body varint per packet, to find packets that are only ever about the user.
         var firstIds = new List<(ushort Op, uint Id, DateTime Time)>();
 
+        // HAMMETER_FIND=<text>: which opcodes carry this text (UTF-8), e.g. a character name.
+        byte[]? find = Environment.GetEnvironmentVariable("HAMMETER_FIND") is { Length: > 0 } f ? System.Text.Encoding.UTF8.GetBytes(f) : null;
+        var found = new List<string>();
+
         var opcodes = new Dictionary<ushort, int>();
         var expanded = new List<byte[]>();
         int records = 0;
@@ -64,6 +68,12 @@ public static class Replay
                 if (Opcodes.TryRead(p, out ushort op))
                 {
                     opcodes[op] = opcodes.GetValueOrDefault(op) + 1;
+                    int at = find is null ? -1 : p.AsSpan().IndexOf(find);
+                    if (at >= 0)
+                    {
+                        found.Add($"  {now:HH:mm:ss} {op & 0xFF:X2} {op >> 8:X2} at byte {at} of {p.Length}: {Convert.ToHexString(p.AsSpan(0, Math.Min(p.Length, at + find!.Length + 8)))}");
+                    }
+
                     try
                     {
                         firstIds.Add((op, PacketReader.Body(p).ReadVarInt(), now));
@@ -112,6 +122,13 @@ public static class Replay
         }
 
         report.AppendLine();
+        if (find is not null)
+        {
+            report.AppendLine($"Packets containing \"{Environment.GetEnvironmentVariable("HAMMETER_FIND")}\":");
+            found.ForEach(l => report.AppendLine(l));
+            report.AppendLine();
+        }
+
         report.AppendLine("Hits by the user on players:");
         Unusual.ForEach(u => report.AppendLine(u));
         report.AppendLine();

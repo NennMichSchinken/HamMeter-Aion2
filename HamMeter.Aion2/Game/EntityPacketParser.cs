@@ -20,6 +20,40 @@ public sealed class EntityPacketParser(EntityRegistry registry, ILogger<EntityPa
         router.On(Opcodes.OtherCharacter, p => this.OnCharacter(p, isUser: false));
         router.On(Opcodes.Spawn, this.OnSpawn);
         router.On(Opcodes.UserState, this.OnUserState);
+        router.On(Opcodes.Death, this.OnDeath);
+    }
+
+    // ----- 04 8D: a monster's death names the player who killed it (§5.3) -------------
+
+    // Body: dead entity, varint, 01, killer entity, varint, u8 length + killer name.
+    private void OnDeath(byte[] packet)
+    {
+        PacketReader r = PacketReader.Body(packet);
+        r.ReadVarInt();         // the dead entity
+        r.ReadVarInt();         // unknown
+        if (r.ReadU8() != 0x01) // no killer block
+        {
+            return;
+        }
+
+        int killer = (int)r.ReadVarInt();
+        r.ReadVarInt();         // unknown, constant per character
+        int length = r.ReadU8();
+        if (length is < 1 or > MaxNameBytes || length > r.Remaining || registry.Player(killer) is null)
+        {
+            return;
+        }
+
+        byte[] raw = new byte[length];
+        for (int i = 0; i < length; i++)
+        {
+            raw[i] = r.ReadU8();
+        }
+
+        if (DecodeName(raw) is { } name)
+        {
+            registry.SetName(killer, name, isUser: killer == registry.UserId);
+        }
     }
 
     // ----- 4A 36: its first field is always the user (docs/protocol.md §6.10) -----------

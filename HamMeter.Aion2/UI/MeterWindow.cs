@@ -414,18 +414,14 @@ public sealed class MeterWindow
         float boxBottom = pos.Y + barH - 2f;
         float boxH = boxBottom - boxTop;
 
-        // Icon mode: the official class icon on a small dark chip, so its own colour stays
-        // readable on a bar of the same colour. Falls back to the text tag if not loaded.
+        // Icon mode: the official class icon as it is, falls back to the text tag if it
+        // isn't loaded.
         if (m_config.JobIndicator == 2)
         {
             IntPtr icon = m_classIcon(job);
             if (icon != IntPtr.Zero)
             {
-                Vector2 chipMin = new(x, boxTop);
-                Vector2 chipMax = new(x + boxH, boxBottom);
-                dl.AddRectFilled(chipMin, chipMax, Col(new Vector4(0.086f, 0.086f, 0.102f, 0.78f)), 3f);
-                float inset = boxH * 0.08f;
-                dl.AddImage(icon, chipMin + new Vector2(inset, inset), chipMax - new Vector2(inset, inset));
+                dl.AddImage(icon, new Vector2(x, boxTop), new Vector2(x + boxH, boxBottom));
                 return x + boxH + 5f;
             }
         }

@@ -211,10 +211,19 @@ compared with the in-game meter; skills that turn out wrong go on an exclusion l
 
 **Status: confirmed**
 
-| Field | Type |
-|---|---|
-| length, opcode | |
-| entity | varint |
+| Field | Type | Notes |
+|---|---|---|
+| length, opcode | | |
+| entity | varint | who died |
+| unknown | varint | |
+| killer flag | u8 | `01` = a killer block follows (**observed** for monsters killed by a player) |
+| killer | varint | entity id of the player who landed the killing blow |
+| unknown | varint | constant per character |
+| killer name | u8 length + UTF-8 | the killer's character name |
+| padding | zero bytes | |
+
+The killer block gives the user's name at the first kill, without waiting for a zone
+change (`33 36`).
 
 Sent for any actor. For monsters it arrives with the killing blow (0–0.5 s after the
 last hit for all 17 mobs in two recordings of 2026-09-24), so it is a reliable "enemy
@@ -350,6 +359,10 @@ structurally; today's knowledge is pattern based:
 
 Summons (pets, spirits, totems) deal damage with their own entity id; their damage and
 healing belong to the owner.
+
+**Observed:** the spawn of a player's summon (a 168-byte `41 36`) carries the owner's
+character name as u8 length + UTF-8 at byte 13 — a possible, more reliable way to find
+the owner than the pattern above.
 
 Proper decoding of this packet is a main task of the independence work.
 

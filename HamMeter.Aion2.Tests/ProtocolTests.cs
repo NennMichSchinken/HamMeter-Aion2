@@ -187,6 +187,38 @@ public class ProtocolTests
     }
 
     [Fact]
+    public void MonsterDeath_NamesTheKiller_SoTheUserGetsANameWithoutZoneChange()
+    {
+        var tracker = new EncounterTracker();
+        using OwnEngine engine = OwnEngine.Offline(tracker, NullLoggerFactory.Instance);
+
+        const int User = 3580;
+        const int Mob = 30824;
+
+        engine.Stream.Dispatch(Packet(Opcodes.UserState, w => { w.VarInt(User); w.Bytes(6); }));
+        engine.Stream.Dispatch(Hit(User, Mob, 17_010_000, 1_000));
+        Assert.Equal("You", tracker.Current!.Combatants.Single().Name);
+
+        // Layout as recorded: mob, varint, 01, killer, varint, name, zero padding.
+        engine.Stream.Dispatch(Packet(Opcodes.Death, w =>
+        {
+            w.VarInt(Mob);
+            w.VarInt(50_896);
+            w.U8(0x01);
+            w.VarInt(User);
+            w.VarInt(504);
+            w.U8(5);
+            w.Raw("Hamzi"u8.ToArray());
+            w.Bytes(10);
+        }));
+        engine.Stream.Dispatch(Hit(User, Mob + 1, 17_010_000, 1_000));
+
+        Combatant you = tracker.Current!.Combatants.Single();
+        Assert.Equal("Hamzi", you.Name);
+        Assert.True(you.IsUser);
+    }
+
+    [Fact]
     public void Spawn_WithUnknownOwner_IsNotASummon()
     {
         var tracker = new EncounterTracker();
