@@ -17,6 +17,12 @@ if (Get-Process -Name "HamMeter-Setup*" -ErrorAction SilentlyContinue) {
 if (Test-Path $out) { Remove-Item $out -Recurse -Force }
 New-Item -ItemType Directory $out | Out-Null
 
+# Every release needs patch notes: they become "What's new" and the GitHub release text.
+$changelog = Get-Content (Join-Path $root "CHANGELOG.md") -Raw
+$escaped = [regex]::Escape($Version)
+$section = [regex]::Match($changelog, "(?ms)^## v?$escaped\b[^\r\n]*\r?\n(.*?)(?=^## |\z)")
+if (-not $section.Success) { throw "CHANGELOG.md has no entry '## $Version - yyyy-mm-dd'. Add the patch notes first." }
+
 $iscc = @(
     "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
     "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
@@ -49,6 +55,19 @@ Copy-Item "$out\setup\HamMeter-Setup.exe" $final
 $hash = (Get-FileHash $final -Algorithm SHA256).Hash
 Set-Content -Encoding ascii "$final.sha256" "$hash  HamMeter-Setup-$Version.exe"
 
+# Sign with the release key (DPAPI, this Windows account). HamMeter only installs an
+# update whose .sig matches the public key built into it.
+Write-Host "==> Signing"
+dotnet run --project "$root\build\ReleaseSigner" -c Release -- sign $final
+if ($LASTEXITCODE -ne 0) { throw "Signing failed." }
+
+# Release text for GitHub: the changelog section (keeps the [important] marker).
+$heading = [regex]::Match($changelog, "(?m)^## v?$escaped\b[^\r\n]*").Value
+$important = if ($heading -match "\[important\]") { "[important]`n`n" } else { "" }
+Set-Content -Encoding utf8 (Join-Path $out "release-notes-$Version.md") ($important + $section.Groups[1].Value.Trim())
+
 Write-Host ""
 Write-Host "Done: $final ($([math]::Round((Get-Item $final).Length / 1MB, 1)) MB)"
 Write-Host "SHA-256: $hash"
+Write-Host "Upload to the GitHub release 'v$Version': HamMeter-Setup-$Version.exe and HamMeter-Setup-$Version.exe.sig"
+Write-Host "Release text: artifacts\release-notes-$Version.md"

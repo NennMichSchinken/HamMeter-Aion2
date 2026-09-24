@@ -22,6 +22,8 @@ public enum Icon
     Info,
     Lock,
     LockOpen,
+    Sparkles,
+    Bell,
 }
 
 // Draws Lucide icons (Assets/Icons, ISC license) as ImGui strokes. Lucide icons are
@@ -47,6 +49,8 @@ internal static class Icons
         [Icon.Info] = "info.svg",
         [Icon.Lock] = "lock.svg",
         [Icon.LockOpen] = "lock-open.svg",
+        [Icon.Sparkles] = "sparkles.svg",
+        [Icon.Bell] = "bell-dot.svg",
     };
 
     private static readonly Dictionary<Icon, LucideIcon?> Cache = new();

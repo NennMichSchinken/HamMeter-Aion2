@@ -31,6 +31,13 @@ internal sealed class SetupFlow : WizardFlow
     private bool m_startMenu = true;
     private bool m_desktop;
     private bool m_launch = true;
+    private bool m_updatesAuto = true;
+
+    // Started by HamMeter's "Update now": run the update without a click.
+    private readonly bool m_autoUpdate;
+    private bool m_autoStarted;
+    private DateTime m_doneAt = DateTime.MaxValue;
+    private volatile string? m_runningText;
 
     private volatile bool m_installing;
     private string? m_message;
@@ -41,8 +48,9 @@ internal sealed class SetupFlow : WizardFlow
     private bool m_quickUpdate;
 
     // preview: jump straight to a page (development screenshots, e.g. --preview=npcap).
-    public SetupFlow(string? preview = null)
+    public SetupFlow(string? preview = null, bool autoUpdate = false)
     {
+        m_autoUpdate = autoUpdate;
         if (m_npcapAtStart == NpcapState.Ok)
         {
             m_npcapChecked = NpcapState.Ok;
@@ -67,6 +75,8 @@ internal sealed class SetupFlow : WizardFlow
 
     private void LoadPreviousOptions(SystemInfo.Installation install)
     {
+        m_updatesAuto = install.UpdateCheck != "manual";
+
         if (install.Tasks is { } tasks)
         {
             string[] t = tasks.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
@@ -159,6 +169,20 @@ internal sealed class SetupFlow : WizardFlow
 
     public override void DrawPage(float width)
     {
+        // "Update now" from inside HamMeter: go straight to installing.
+        if (m_autoUpdate && !m_autoStarted && m_page == Page.Update)
+        {
+            m_autoStarted = true;
+            this.StartInstall(waitForMeter: true);
+        }
+
+        // ...and close on its own a moment after HamMeter was started again.
+        if (m_autoUpdate && m_page == Page.Done && (DateTime.Now - m_doneAt).TotalSeconds > 4)
+        {
+            this.Close();
+            return;
+        }
+
         switch (m_page)
         {
             case Page.Update:
@@ -304,7 +328,21 @@ internal sealed class SetupFlow : WizardFlow
         if (!m_installing)
         {
             Widgets.Checkbox(Strings.StartMenu, ref m_startMenu);
+            ImGui.SameLine(0f, 24f);
             Widgets.Checkbox(Strings.Desktop, ref m_desktop);
+
+            // Update checks: asked here, changeable later in the settings.
+            ImGui.Dummy(new Vector2(0f, 2f));
+            ImGui.TextDisabled(Strings.UpdatesHeading);
+            if (Widgets.OptionCard("upd-auto", Icon.Refresh, Strings.UpdatesAuto, Strings.Recommended, Strings.UpdatesAutoText, m_updatesAuto, width))
+            {
+                m_updatesAuto = true;
+            }
+
+            if (Widgets.OptionCard("upd-manual", Icon.Info, Strings.UpdatesManual, null, Strings.UpdatesManualText, !m_updatesAuto, width))
+            {
+                m_updatesAuto = false;
+            }
         }
 
         ImGui.Dummy(new Vector2(0f, 6f));
@@ -353,7 +391,7 @@ internal sealed class SetupFlow : WizardFlow
 
         if (m_installing)
         {
-            Widgets.Hint(runningText);
+            Widgets.Hint(m_runningText ?? runningText);
         }
         else if (m_message is not null)
         {
@@ -393,10 +431,12 @@ internal sealed class SetupFlow : WizardFlow
 
     // ----- Actions ----------------------------------------------------------------------
 
-    private void StartInstall()
+    // waitForMeter: started by HamMeter's own "Update now", which quits right after
+    // launching us; wait for it instead of reporting it as still running.
+    private void StartInstall(bool waitForMeter = false)
     {
         // Updating while the meter runs would hit locked files.
-        if (SystemInfo.MeterRunning())
+        if (!waitForMeter && SystemInfo.MeterRunning())
         {
             m_message = Strings.UninstallRunning;
             m_messageIsError = true;
@@ -424,13 +464,33 @@ internal sealed class SetupFlow : WizardFlow
 
         string args = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /CLOSEAPPLICATIONS /NORESTARTAPPLICATIONS"
             + $" /TASKS=\"{string.Join(',', tasks)}\""
-            + (npcapByUs ? " /npcapbyus=1" : string.Empty);
+            + (npcapByUs ? " /npcapbyus=1" : string.Empty)
+            // A quick update keeps the update choice that is already stored.
+            + (m_quickUpdate ? string.Empty : m_updatesAuto ? " /updates=auto" : " /updates=manual");
 
         m_installing = true;
         m_message = null;
         m_messageIsError = false;
         Task.Run(() =>
         {
+            if (waitForMeter)
+            {
+                m_runningText = Strings.WaitingForMeter;
+                for (int i = 0; i < 40 && SystemInfo.MeterRunning(); i++)
+                {
+                    Thread.Sleep(500);
+                }
+
+                m_runningText = null;
+                if (SystemInfo.MeterRunning())
+                {
+                    m_message = Strings.UninstallRunning;
+                    m_messageIsError = true;
+                    m_installing = false;
+                    return;
+                }
+            }
+
             (PayloadResult result, int code) = Payload.Run(args);
             m_messageIsError = result != PayloadResult.Success;
             m_message = result switch
@@ -449,6 +509,7 @@ internal sealed class SetupFlow : WizardFlow
                     this.Launch();
                 }
 
+                m_doneAt = DateTime.Now;
                 m_page = Page.Done;
             }
         });

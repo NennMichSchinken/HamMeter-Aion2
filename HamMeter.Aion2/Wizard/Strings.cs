@@ -80,6 +80,16 @@ internal static class Strings
     // Install
     public static string InstallTitle => T("Install", "Installieren");
     public static string InstallText => T("HamMeter is installed into a protected folder.", "HamMeter wird in einen geschützten Ordner installiert.");
+    public static string UpdatesHeading => T("UPDATES", "UPDATES");
+    public static string UpdatesAuto => T("Check for updates when HamMeter starts", "Beim Start nach Updates suchen");
+    public static string UpdatesAutoText => T(
+        "One short request to GitHub when HamMeter starts. No data is sent.",
+        "Eine kurze Anfrage an GitHub, wenn HamMeter startet. Es werden keine Daten gesendet.");
+    public static string UpdatesManual => T("Manual only", "Nur manuell");
+    public static string UpdatesManualText => T(
+        "HamMeter never goes online by itself. Check under Settings > Data & App > \"Check for updates\".",
+        "HamMeter geht nie von selbst online. Updates findest du unter Einstellungen > Data & App > \"Check for updates\".");
+    public static string WaitingForMeter => T("Waiting for HamMeter to close…", "Warte, bis HamMeter geschlossen ist…");
     public static string StartMenu => T("Start menu entry", "Startmenü-Eintrag");
     public static string Desktop => T("Desktop shortcut", "Desktop-Verknüpfung");
     public static string Ready => T("Ready", "Bereit");

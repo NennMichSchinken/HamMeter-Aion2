@@ -24,17 +24,21 @@ public sealed class HamMeterOverlay : Overlay
     private readonly EncounterTracker m_tracker;
     private readonly SettingsWindow m_settings;
     private readonly MeterWindow m_meter;
+    private readonly Update.UpdateController m_updates;
+    private readonly UpdateWindows m_updateWindows;
     private readonly Dictionary<string, IntPtr> m_icons = new(StringComparer.OrdinalIgnoreCase);
     private readonly System.Collections.Concurrent.ConcurrentQueue<TrayIcon.Command> m_trayCommands = new();
     private TrayIcon? m_tray;
     private IntPtr m_iniPath;
 
-    public HamMeterOverlay(Config config, EncounterTracker tracker, Func<string?> status)
+    public HamMeterOverlay(Config config, EncounterTracker tracker, Func<string?> status, Update.UpdateController updates)
         : base("HamMeter", true)
     {
         m_config = config;
         m_tracker = tracker;
-        m_settings = new SettingsWindow(config);
+        m_updates = updates;
+        m_updateWindows = new UpdateWindows(updates);
+        m_settings = new SettingsWindow(config, updates);
         m_meter = new MeterWindow(config, m_settings, tracker, this.ClassIcon, status);
         m_settings.QuitRequested += this.Close;
     }
@@ -59,6 +63,7 @@ public sealed class HamMeterOverlay : Overlay
         // the meter. Everything outside the ImGui windows stays click-through.
         this.Position = new System.Drawing.Point(GetSystemMetrics(SmXVirtualScreen), GetSystemMetrics(SmYVirtualScreen));
         m_meter.PrimaryOrigin = new System.Numerics.Vector2(-this.Position.X, -this.Position.Y);
+        m_updateWindows.PrimaryCenter = m_meter.PrimaryOrigin + new System.Numerics.Vector2(GetSystemMetrics(0) * 0.5f, GetSystemMetrics(1) * 0.5f);
         this.Size = new System.Drawing.Size(GetSystemMetrics(SmCxVirtualScreen), GetSystemMetrics(SmCyVirtualScreen));
 
         BarStyles.Textures = this.BarTexture;
@@ -82,6 +87,8 @@ public sealed class HamMeterOverlay : Overlay
             this.ReplaceFont(font, FontSize, ranges);
         }
 
+        // One request to GitHub when enabled; offline simply means no popup.
+        m_updates.CheckAtStartup();
         return Task.CompletedTask;
     }
 
@@ -114,6 +121,13 @@ public sealed class HamMeterOverlay : Overlay
 
         m_settings.Draw();
         m_meter.Draw();
+        m_updateWindows.Draw();
+
+        // A verified update was started: quit so it can replace the files.
+        if (m_updates.QuitRequested)
+        {
+            this.Close();
+        }
     }
 
     // Bar textures are embedded resources (Assets/Bars), uploaded to the GPU on first use.

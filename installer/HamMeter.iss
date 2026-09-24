@@ -64,6 +64,8 @@ Root: HKLM; Subkey: "{#UninstallKey}"; ValueType: string; ValueName: "UninstallS
 Root: HKLM; Subkey: "{#UninstallKey}"; ValueType: dword; ValueName: "NoModify"; ValueData: 1
 Root: HKLM; Subkey: "{#UninstallKey}"; ValueType: dword; ValueName: "NoRepair"; ValueData: 1
 Root: HKLM; Subkey: "{#UninstallKey}"; ValueType: dword; ValueName: "NpcapInstalledByHamMeter"; ValueData: 1; Check: NpcapByUs
+; Update check chosen in the wizard ("auto" / "manual"); a quick update passes none and keeps it.
+Root: HKLM; Subkey: "{#UninstallKey}"; ValueType: string; ValueName: "UpdateCheck"; ValueData: "{param:updates}"; Check: HasUpdatesParam
 ; The chosen options, so an update can reuse them without asking again.
 Root: HKLM; Subkey: "{#UninstallKey}"; ValueType: string; ValueName: "SetupTasks"; ValueData: "{code:SelectedTasks}"
 
@@ -83,6 +85,14 @@ Type: filesandordirs; Name: "{app}"
 function NpcapByUs: Boolean;
 begin
   Result := ExpandConstant('{param:npcapbyus|0}') = '1';
+end;
+
+function HasUpdatesParam: Boolean;
+var
+  Value: String;
+begin
+  Value := ExpandConstant('{param:updates|}');
+  Result := (Value = 'auto') or (Value = 'manual');
 end;
 
 function SelectedTasks(Param: String): String;

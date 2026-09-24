@@ -53,8 +53,8 @@ internal static class SystemInfo
     }
 
     // Tasks: the options chosen at install ("startmenu,desktop,firewall"), null for
-    // installs made before they were recorded.
-    public sealed record Installation(string Directory, string Version, bool NpcapByUs, string? Tasks);
+    // installs made before they were recorded. UpdateCheck: "auto" or "manual".
+    public sealed record Installation(string Directory, string Version, bool NpcapByUs, string? Tasks, string? UpdateCheck);
 
     public static Installation? Installed()
     {
@@ -68,7 +68,8 @@ internal static class SystemInfo
             dir,
             k.GetValue("DisplayVersion") as string ?? "?",
             k.GetValue("NpcapInstalledByHamMeter") is int n && n != 0,
-            k.GetValue("SetupTasks") as string);
+            k.GetValue("SetupTasks") as string,
+            k.GetValue("UpdateCheck") as string);
     }
 
     // True while the HamMeter overlay is running (it holds the single-instance mutex).
@@ -88,20 +89,33 @@ internal static class SystemInfo
     // the uninstaller, so nothing of HamMeter stays behind.
     public static void DeleteSetupLeftovers()
     {
+        List<string> dirs = [Path.Combine(Path.GetTempPath(), ".net", "HamMeter-Setup")];
+
+        // Downloaded updates (HamMeter's self-update puts each into its own folder).
         try
         {
-            string dir = Path.Combine(Path.GetTempPath(), ".net", "HamMeter-Setup");
-            if (Directory.Exists(dir))
-            {
-                Directory.Delete(dir, true);
-            }
+            dirs.AddRange(Directory.EnumerateDirectories(Path.GetTempPath(), "HamMeterUpdate-*"));
         }
         catch (IOException)
         {
-            // The setup is still running; next time.
         }
-        catch (UnauthorizedAccessException)
+
+        foreach (string dir in dirs)
         {
+            try
+            {
+                if (Directory.Exists(dir))
+                {
+                    Directory.Delete(dir, true);
+                }
+            }
+            catch (IOException)
+            {
+                // Still in use (the setup is running); next time.
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
         }
     }
 

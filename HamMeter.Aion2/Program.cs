@@ -102,6 +102,9 @@ public static class Program
         services.AddSingleton(tracker);
         services.AddSingleton<CombatPacketParser>();
         services.AddSingleton<PacketRecorder>();
+        services.AddSingleton(config);
+        services.AddSingleton<Update.UpdateService>();
+        services.AddSingleton<Update.UpdateController>();
 
         await using ServiceProvider sp = services.BuildServiceProvider();
         ILogger log = sp.GetRequiredService<ILoggerFactory>().CreateLogger("HamMeter");
@@ -143,11 +146,23 @@ public static class Program
             return capture.DeviceName is null ? "Waiting for Aion 2...\n\nStart the game and log in to a character." : null;
         }
 
-        using (var overlay = new HamMeterOverlay(config, tracker, Status))
+        using (var overlay = new HamMeterOverlay(config, tracker, Status, sp.GetRequiredService<Update.UpdateController>()))
         {
             overlay.SettingsChanged += () => recorder.SetRecording(config.RecordPackets);
             if (preview)
             {
+                var updates = sp.GetRequiredService<Update.UpdateController>();
+                updates.PreviewMode = true;
+                if (args.Contains("--preview-update", StringComparer.OrdinalIgnoreCase))
+                {
+                    updates.ShowPreviewUpdate(args.Contains("--important", StringComparer.OrdinalIgnoreCase));
+                }
+
+                if (args.Contains("--preview-whatsnew", StringComparer.OrdinalIgnoreCase))
+                {
+                    updates.WhatsNewOpen = true;
+                }
+
                 if (args.Contains("--preview-corner", StringComparer.OrdinalIgnoreCase))
                 {
                     overlay.ShowCornerPreview();

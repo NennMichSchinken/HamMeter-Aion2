@@ -8,7 +8,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>HamMeter</AssemblyName>
     <RootNamespace>HamMeter</RootNamespace>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <Authors>NennMichSchinken</Authors>
     <Product>HamMeter for Aion 2</Product>
     <ApplicationIcon>..\assets\HamMeter.ico</ApplicationIcon>
@@ -36,6 +36,9 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Assets\Icons\*.svg" LogicalName="HamMeter.Icons.%(Filename)%(Extension)" />
+    <!-- Patch notes for "What's new" and the key that update signatures are checked against. -->
+    <EmbeddedResource Include="..\CHANGELOG.md" LogicalName="HamMeter.CHANGELOG.md" />
+    <EmbeddedResource Include="Update\release-public-key.txt" LogicalName="HamMeter.ReleasePublicKey" />
     <!-- Bar textures from WispUI (same author, MIT). -->
     <EmbeddedResource Include="Assets\Bars\*.png" LogicalName="HamMeter.Bars.%(Filename)%(Extension)" />
     <None Include="Assets\Icons\LICENSE-lucide.txt" CopyToOutputDirectory="PreserveNewest" />

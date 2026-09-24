@@ -9,7 +9,9 @@ public static class Program
     public static async Task Main(string[] args)
     {
         string? preview = args.FirstOrDefault(a => a.StartsWith("--preview=", StringComparison.OrdinalIgnoreCase))?["--preview=".Length..];
-        using var wizard = new WizardWindow(new SetupFlow(preview));
+        // --auto-update: started by HamMeter's "Update now" after it verified this file.
+        bool autoUpdate = args.Contains("--auto-update", StringComparer.OrdinalIgnoreCase);
+        using var wizard = new WizardWindow(new SetupFlow(preview, autoUpdate));
         await wizard.Run();
     }
 }

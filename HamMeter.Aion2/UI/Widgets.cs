@@ -171,6 +171,44 @@ internal static class Widgets
         return clicked;
     }
 
+    // Rounded pill (version badge, "Patch notes"). Clickable when an id is given.
+    public static bool Pill(string id, string text, Vector4 background, Vector4 foreground, Icon? icon = null, bool dot = false, float scale = 0.85f)
+    {
+        float size = ImGui.GetFontSize() * scale;
+        float textW = TextWidth(text, size);
+        float lead = (icon is null ? 0f : size + 5f) + (dot ? 11f : 0f);
+        Vector2 p = ImGui.GetCursorScreenPos();
+        Vector2 box = new(textW + lead + 20f, size + 8f);
+
+        bool clicked = ImGui.InvisibleButton($"##pill_{id}", box);
+        bool hovered = ImGui.IsItemHovered();
+        if (hovered)
+        {
+            ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
+        }
+
+        Vector4 bg = hovered ? new Vector4(MathF.Min(1f, background.X + 0.06f), MathF.Min(1f, background.Y + 0.06f), MathF.Min(1f, background.Z + 0.06f), MathF.Max(background.W, 0.3f)) : background;
+        ImDrawListPtr dl = ImGui.GetWindowDrawList();
+        dl.AddRectFilled(p, p + box, Col(bg), box.Y * 0.5f);
+
+        float x = p.X + 10f;
+        float cy = p.Y + (box.Y * 0.5f);
+        if (dot)
+        {
+            dl.AddCircleFilled(new Vector2(x + 3f, cy), 3f, Col(foreground));
+            x += 11f;
+        }
+
+        if (icon is { } i)
+        {
+            Icons.Draw(dl, i, new Vector2(x, cy - (size * 0.5f)), size, Col(foreground));
+            x += size + 5f;
+        }
+
+        dl.AddText(ImGui.GetFont(), size, new Vector2(x, cy - (size * 0.5f)), Col(hovered ? Theme.Text : foreground), text);
+        return clicked;
+    }
+
     // Tooltip in the HamMeter style (dark, rounded, bordered) instead of ImGui's default grey.
     public static void Tooltip(string text)
     {

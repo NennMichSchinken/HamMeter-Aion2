@@ -56,6 +56,13 @@ public class Config
     // --- Testing ---
     public bool TestMode = false;
 
+    // --- Updates ---
+    // null = not chosen here yet: the installer's choice applies (default: on).
+    public bool? CheckForUpdates = null;
+
+    // A version the user chose to skip ("Ignore this version").
+    public string? IgnoredVersion = null;
+
     // Records the game packets (encrypted) so a fight can be replayed and checked.
     // Never saved: recording is off on every start.
     [JsonIgnore]

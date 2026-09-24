@@ -29,7 +29,10 @@ public sealed class SettingsWindow
 
     private const float HeaderH = 44f;
 
+    private const float FooterH = 34f;
+
     private readonly Config m_config;
+    private readonly Update.UpdateController m_updates;
 
     private bool m_testingOpen;
     private bool m_displayOpen;
@@ -55,9 +58,10 @@ public sealed class SettingsWindow
 
     private readonly StyleSelector<BarStyle> m_barStyle;
 
-    public SettingsWindow(Config config)
+    public SettingsWindow(Config config, Update.UpdateController updates)
     {
         m_config = config;
+        m_updates = updates;
 
         // The preview shows each texture in the accent colour; on the meter it takes the
         // class or role colour.
@@ -165,7 +169,7 @@ public sealed class SettingsWindow
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(16f, 16f));
         ImGui.PushStyleColor(ImGuiCol.Border, new Vector4(0f, 0f, 0f, 0f));
         ImGuiWindowFlags bodyFlags = m_jobResetOpen ? ImGuiWindowFlags.NoScrollWithMouse : ImGuiWindowFlags.None;
-        if (ImGui.BeginChild("##body", new Vector2(0f, -24f), ImGuiChildFlags.Borders, bodyFlags))
+        if (ImGui.BeginChild("##body", new Vector2(0f, -FooterH), ImGuiChildFlags.Borders, bodyFlags))
         {
             if (this.Bar("Testing", ref m_testingOpen))
             {
@@ -317,14 +321,33 @@ public sealed class SettingsWindow
                 ImGui.TextDisabled("Encrypted, readable only by your Windows account.");
                 ImGui.TextDisabled($"Turns off on restart, deleted after {Capture.PacketRecorder.RetentionDays} days.");
                 ImGui.Unindent(24f);
-                ImGui.Dummy(new Vector2(0f, 8f));
-                ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(12f, 8f));
-                if (ImGui.Button("Quit HamMeter"))
+                SubHeading("Updates");
+                bool checkOnStart = m_updates.CheckOnStart;
+                if (CheckboxRow("Check for updates when HamMeter starts", ref checkOnStart))
+                {
+                    m_updates.CheckOnStart = checkOnStart;
+                }
+
+                ImGui.Indent(24f);
+                ImGui.TextDisabled("One request to GitHub. Nothing else is sent.");
+                ImGui.Unindent(24f);
+                ImGui.Dummy(new Vector2(0f, 2f));
+                if (Widgets.Button(m_updates.Checking ? "Checking…" : "Check for updates", ButtonKind.Normal, !m_updates.Checking, 0f, Icon.Refresh))
+                {
+                    _ = m_updates.CheckAsync(manual: true);
+                }
+
+                if (m_updates.Status is { } status)
+                {
+                    ImGui.TextDisabled(status);
+                }
+
+                SubHeading("App");
+                if (Widgets.Button("Quit HamMeter"))
                 {
                     this.QuitRequested?.Invoke();
                 }
 
-                ImGui.PopStyleVar();
                 ImGui.Dummy(new Vector2(0f, 4f));
             }
 
@@ -351,19 +374,39 @@ public sealed class SettingsWindow
         ImGui.PopStyleColor();
         ImGui.PopStyleVar();
 
-        // Easter-egg footer: pinned to the bottom, centered, deliberately faint.
+        // Footer: the easter egg on the left, deliberately faint; the version pill on the
+        // right. The pill opens "What's new", or the update popup when one is waiting.
         {
             ImDrawListPtr fdl = ImGui.GetWindowDrawList();
-            ImFontPtr ffont = ImGui.GetFont();
             const string footer = "Princess Donut is watching you!";
             const float fsize = 12f;
-            float baseFont = ImGui.GetFontSize();
-            float scale = baseFont > 0f ? fsize / baseFont : 1f;
-            float fw = ImGui.CalcTextSize(footer).X * scale;
-            float fx = m_winPos.X + ((m_winSize.X - fw) * 0.5f);
-            float fy = m_winPos.Y + m_winSize.Y - 8f - fsize;
+            float footerMid = m_winPos.Y + m_winSize.Y - (FooterH * 0.5f);
             uint fcol = ImGui.GetColorU32(new Vector4(ColMuted.X, ColMuted.Y, ColMuted.Z, 0.45f));
-            fdl.AddText(ffont, fsize, new Vector2(fx, fy), fcol, footer);
+            fdl.AddText(ImGui.GetFont(), fsize, new Vector2(m_winPos.X + 16f, footerMid - (fsize * 0.5f)), fcol, footer);
+
+            string version = "v" + Update.Changelog.Current.ToString(3);
+            bool pending = m_updates.Available is not null;
+            string pillText = pending ? $"v{m_updates.Available!.Version.ToString(3)} available" : version;
+            float pillScale = 0.75f;
+            float psize = ImGui.GetFontSize() * pillScale;
+            float pillW = Widgets.TextWidth(pillText, psize) + 20f + (pending ? 11f : psize + 5f);
+            ImGui.SetCursorScreenPos(new Vector2(m_winPos.X + m_winSize.X - 14f - pillW, footerMid - ((psize + 8f) * 0.5f)));
+            bool clicked = pending
+                ? Widgets.Pill("version", pillText, new Vector4(ColAccent.X, ColAccent.Y, ColAccent.Z, 0.18f), ColAccentHover, null, true, pillScale)
+                : Widgets.Pill("version", pillText, ColFrame, ColMuted, Icon.Sparkles, false, pillScale);
+            if (clicked)
+            {
+                if (pending)
+                {
+                    m_updates.PopupStatus = null;
+                    m_updates.PopupError = false;
+                    m_updates.PopupOpen = true;
+                }
+                else
+                {
+                    m_updates.WhatsNewOpen = true;
+                }
+            }
         }
 
         if (changed)

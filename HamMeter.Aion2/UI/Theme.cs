@@ -21,6 +21,7 @@ internal static class Theme
     public static readonly Vector4 AccentActive = Hex(0x0066CC);
     public static readonly Vector4 Success = Hex(0x32D74B);
     public static readonly Vector4 Danger = Hex(0xFF453A);
+    public static readonly Vector4 Warning = Hex(0xFFB340);
 
     // Rounding tokens: large surfaces (dialogs) round more than small menus (dropdowns).
     public const float DialogRounding = 10f;
