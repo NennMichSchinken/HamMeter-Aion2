@@ -39,7 +39,7 @@ public sealed class HamMeterOverlay : Overlay
         m_updates = updates;
         m_updateWindows = new UpdateWindows(updates);
         m_settings = new SettingsWindow(config, updates);
-        m_meter = new MeterWindow(config, m_settings, tracker, this.ClassIcon, status);
+        m_meter = new MeterWindow(config, m_settings, tracker, status);
         m_settings.QuitRequested += this.Close;
     }
 
@@ -155,31 +155,6 @@ public sealed class HamMeterOverlay : Overlay
         }
 
         m_icons[key] = handle;
-        return handle;
-    }
-
-    private IntPtr ClassIcon(string job)
-    {
-        if (m_icons.TryGetValue(job, out IntPtr handle))
-        {
-            return handle;
-        }
-
-        handle = IntPtr.Zero;
-        string? path = ClassInfo.IconPath(job);
-        if (path is not null && File.Exists(path))
-        {
-            try
-            {
-                this.AddOrGetImagePointer(path, false, out handle, out _, out _);
-            }
-            catch (Exception)
-            {
-                handle = IntPtr.Zero;
-            }
-        }
-
-        m_icons[job] = handle;
         return handle;
     }
 

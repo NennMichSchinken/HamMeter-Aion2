@@ -110,9 +110,9 @@ The release key is created once with `dotnet run --project build\ReleaseSigner -
 Concept, design, and UX/UI by **NennMichSchinken**. The implementation was written with the help of AI (Claude) under my direction.
 
 - Monster names, boss flags and dungeon data: **taengu** ([A2Tools-DPS-Meter](https://github.com/taengu/A2Tools-DPS-Meter), GPL-3.0), see `HamMeter.Aion2/Game/Data/SOURCE.md`
-- Old reader (still included during the transition) and class icons: **Kuroukihime** ([AIon2-Dps-Meter](https://github.com/Kuroukihime/AIon2-Dps-Meter), GPL-3.0)
+- Old reader (still included during the transition): **Kuroukihime** ([AIon2-Dps-Meter](https://github.com/Kuroukihime/AIon2-Dps-Meter), GPL-3.0)
 - Bar textures and styles: from **WispUI** (NennMichSchinken, MIT), the FFXIV suite HamMeter lives on in
-- Icons: [Lucide](https://lucide.dev) (ISC, see `HamMeter.Aion2/Assets/Icons/LICENSE-lucide.txt`)
+- Icons, including the class icons: [Lucide](https://lucide.dev) (ISC, see `HamMeter.Aion2/Assets/Icons/LICENSE-lucide.txt`)
 - Packet capture library: [SharpPcap](https://github.com/dotpcap/sharppcap) (MIT); LZ4: [K4os.Compression.LZ4](https://github.com/MiloszKrajewski/K4os.Compression.LZ4) (MIT)
 - Installer engine: [Inno Setup](https://jrsoftware.org/isinfo.php) by Jordan Russell and Martijn Laan
 

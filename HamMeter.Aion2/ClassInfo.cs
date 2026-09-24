@@ -49,17 +49,18 @@ public static class ClassInfo
         ("Ranged / Caster", new[] { "RNG", "SOR", "ELE" }),
     };
 
-    private static readonly Dictionary<string, string> IconFiles = new(StringComparer.OrdinalIgnoreCase)
+    // Class icons: Lucide line icons, drawn like the rest of HamMeter's UI glyphs.
+    private static readonly Dictionary<string, UI.Icon> Icons = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["GLA"] = "gladiator.png",
-        ["TEM"] = "templar.png",
-        ["ASN"] = "assassin.png",
-        ["RNG"] = "ranger.png",
-        ["SOR"] = "sorcerer.png",
-        ["ELE"] = "elementalist.png",
-        ["CLR"] = "cleric.png",
-        ["CHN"] = "chanter.png",
-        ["BRW"] = "brawler.png",
+        ["GLA"] = UI.Icon.Sword,
+        ["TEM"] = UI.Icon.Shield,
+        ["ASN"] = UI.Icon.Swords,
+        ["RNG"] = UI.Icon.BowArrow,
+        ["SOR"] = UI.Icon.Flame,
+        ["ELE"] = UI.Icon.Ghost,
+        ["CLR"] = UI.Icon.Cross,
+        ["CHN"] = UI.Icon.Music,
+        ["BRW"] = UI.Icon.HandFist,
     };
 
     public static string KeyFromId(long classId) => ById.TryGetValue(classId, out string? k) ? k : string.Empty;
@@ -68,10 +69,7 @@ public static class ClassInfo
 
     public static string FullName(string job) => Names.TryGetValue(job, out string? n) ? n : job;
 
-    public static string? IconPath(string job) =>
-        IconFiles.TryGetValue(job, out string? f)
-            ? Path.Combine(AppContext.BaseDirectory, "Assets", "Classes", f)
-            : null;
+    public static UI.Icon? IconFor(string job) => Icons.TryGetValue(job, out UI.Icon icon) ? icon : null;
 
     private static Vector4 Rgb(int r, int g, int b) => new(r / 255f, g / 255f, b / 255f, 1f);
 

@@ -47,9 +47,6 @@
     <!-- Bar textures from WispUI (same author, MIT). -->
     <EmbeddedResource Include="Assets\Bars\*.png" LogicalName="HamMeter.Bars.%(Filename)%(Extension)" />
     <None Include="Assets\Icons\LICENSE-lucide.txt" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\external\AionDpsMeter\AionDpsMeter.UI\Assets\Classes\*.png"
-          Link="Assets\Classes\%(Filename)%(Extension)"
-          CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
