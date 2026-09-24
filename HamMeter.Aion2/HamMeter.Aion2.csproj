@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>HamMeter</AssemblyName>
+    <RootNamespace>HamMeter</RootNamespace>
+    <Version>0.1.0</Version>
+    <Authors>NennMichSchinken</Authors>
+    <Product>HamMeter for Aion 2</Product>
+    <ApplicationIcon>..\assets\HamMeter.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <!-- Security-sensitive parts (packet filter, recorder) are unit tested directly. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="HamMeter.Aion2.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ClickableTransparentOverlay" Version="11.1.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.2" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.2" />
+    <!-- Pinned above the transitive versions, which have published security advisories. -->
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.13" />
+  </ItemGroup>
+
+  <!-- Packet capture, parsing and game data come from Kuroukihime's AIon2-Dps-Meter (GPL-3.0). -->
+  <ItemGroup>
+    <ProjectReference Include="..\external\AionDpsMeter\AionDpsMeter.Core\AionDpsMeter.Core.csproj" />
+    <ProjectReference Include="..\external\AionDpsMeter\AionDpsMeter.Services\AionDpsMeter.Services.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\Icons\*.svg" LogicalName="HamMeter.Icons.%(Filename)%(Extension)" />
+    <!-- Bar textures from WispUI (same author, MIT). -->
+    <EmbeddedResource Include="Assets\Bars\*.png" LogicalName="HamMeter.Bars.%(Filename)%(Extension)" />
+    <None Include="Assets\Icons\LICENSE-lucide.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\external\AionDpsMeter\AionDpsMeter.UI\Assets\Classes\*.png"
+          Link="Assets\Classes\%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

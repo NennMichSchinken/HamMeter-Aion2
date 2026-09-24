@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>HamMeter-Setup</AssemblyName>
+    <RootNamespace>HamMeter.Setup</RootNamespace>
+    <Version>0.1.0</Version>
+    <Authors>NennMichSchinken</Authors>
+    <Product>HamMeter for Aion 2 Setup</Product>
+    <ApplicationIcon>..\assets\HamMeter.ico</ApplicationIcon>
+    <!-- The setup never needs elevation itself; only the embedded Inno engine asks. -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ClickableTransparentOverlay" Version="11.1.0" />
+    <!-- Pinned above the transitive version, which has published security advisories. -->
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+  </ItemGroup>
+
+  <!-- Same design system as the meter: shared source, not a copy. -->
+  <ItemGroup>
+    <Compile Include="..\HamMeter.Aion2\UI\Theme.cs" Link="Shared\Theme.cs" />
+    <Compile Include="..\HamMeter.Aion2\UI\Icons.cs" Link="Shared\Icons.cs" />
+    <Compile Include="..\HamMeter.Aion2\UI\Widgets.cs" Link="Shared\Widgets.cs" />
+    <Compile Include="..\HamMeter.Aion2\Wizard\Strings.cs" Link="Shared\Strings.cs" />
+    <Compile Include="..\HamMeter.Aion2\Wizard\SystemInfo.cs" Link="Shared\SystemInfo.cs" />
+    <Compile Include="..\HamMeter.Aion2\Wizard\WizardWindow.cs" Link="Shared\WizardWindow.cs" />
+    <EmbeddedResource Include="..\HamMeter.Aion2\Assets\Icons\*.svg" LogicalName="HamMeter.Icons.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\HamMeter.Aion2\Assets\Icons\LICENSE-lucide.txt" LogicalName="HamMeter.Licenses.lucide.txt" />
+  </ItemGroup>
+
+  <!-- Release builds embed the Inno engine + its SHA-256 (see build\build.ps1). -->
+  <ItemGroup Condition="'$(PayloadPath)' != ''">
+    <EmbeddedResource Include="$(PayloadPath)" LogicalName="HamMeter.Payload" />
+    <EmbeddedResource Include="$(PayloadPath).sha256" LogicalName="HamMeter.Payload.sha256" />
+  </ItemGroup>
+
+</Project>

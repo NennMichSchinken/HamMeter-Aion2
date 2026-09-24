@@ -1,0 +1,9 @@
+<Solution>
+  <Project Path="HamMeter.Aion2/HamMeter.Aion2.csproj" />
+  <Project Path="HamMeter.Aion2.Tests/HamMeter.Aion2.Tests.csproj" />
+  <Project Path="HamMeter.Setup/HamMeter.Setup.csproj" />
+  <Folder Name="/external/">
+    <Project Path="external/AionDpsMeter/AionDpsMeter.Core/AionDpsMeter.Core.csproj" />
+    <Project Path="external/AionDpsMeter/AionDpsMeter.Services/AionDpsMeter.Services.csproj" />
+  </Folder>
+</Solution>
