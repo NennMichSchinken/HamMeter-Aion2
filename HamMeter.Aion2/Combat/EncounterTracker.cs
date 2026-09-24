@@ -7,10 +7,11 @@ public readonly record struct PlayerRef(int Id, string Name, string Job, bool Is
 // finished fights and a combined "Overall". Packets arrive on the capture thread while
 // the overlay reads on the render thread, so all state is guarded by one lock.
 //
-// A fight ends after CombatTimeoutSeconds without damage, so pulls in quick succession
-// (farming) stay one fight. Its clock only runs while enemies are engaged: once every
-// enemy that was hit or hit back has died, the clock pauses until the next pull, so
-// walking between mobs does not lower DPS.
+// Like combat in WoW: a fight lasts while enemies are engaged (hit by us or hitting us).
+// Its clock pauses the moment the last of them dies, and the fight ends
+// FightEndSeconds later unless the next pull comes first, so every pack is a fight of its
+// own and walking never counts as fight time. As a safety net for a missing death, a
+// fight also ends after IdleTimeoutSeconds without any damage.
 //
 // Bosses (monster list) always get a fight of their own: the first hit on a boss closes
 // a running trash fight, and the fight ends as soon as its last boss dies.
@@ -29,8 +30,11 @@ public sealed class EncounterTracker
     private EncounterSnapshot? m_overall;
     private int m_overallCount = -1;
 
-    // Seconds without any damage (dealt or taken) before a fight counts as over.
-    public double CombatTimeoutSeconds { get; set; } = 30;
+    // Seconds after the last engaged enemy died before the fight counts as over.
+    public double FightEndSeconds { get; set; } = 5;
+
+    // Seconds without any damage (dealt or taken) before a fight ends regardless.
+    public double IdleTimeoutSeconds { get; set; } = 30;
 
     public void DamageDone(DateTime time, PlayerRef source, long amount, int targetId, string targetName, bool targetIsBoss = false, bool ours = true)
     {
@@ -168,7 +172,8 @@ public sealed class EncounterTracker
         lock (m_sync)
         {
             if (m_current is { Active: true } enc
-                && (now - enc.LastCombat).TotalSeconds > this.CombatTimeoutSeconds)
+                && ((enc.AllDeadSince is { } dead && (now - dead).TotalSeconds > this.FightEndSeconds)
+                    || (now - enc.LastCombat).TotalSeconds > this.IdleTimeoutSeconds))
             {
                 finished = this.Finish(enc);
             }
@@ -185,14 +190,23 @@ public sealed class EncounterTracker
         }
     }
 
-    public EncounterSnapshot? Current
+    public EncounterSnapshot? Current => this.CurrentAt(DateTime.Now);
+
+    // Enemies that keep the current fight's clock running (for --replay).
+    internal int[] Engaged()
     {
-        get
+        lock (m_sync)
         {
-            lock (m_sync)
-            {
-                return m_current?.Active == true ? m_current.Snapshot(DateTime.Now) : m_lastFinished;
-            }
+            return m_current is { Active: true } enc ? enc.EngagedIds() : [];
+        }
+    }
+
+    // The current fight as of a given time (a replay runs in recorded time).
+    public EncounterSnapshot? CurrentAt(DateTime now)
+    {
+        lock (m_sync)
+        {
+            return m_current?.Active == true ? m_current.Snapshot(now) : m_lastFinished;
         }
     }
 
@@ -319,6 +333,8 @@ public sealed class EncounterTracker
 
         public bool HasBoss => m_bosses.Count > 0;
 
+        public int[] EngagedIds() => m_engaged.ToArray();
+
         // Enemies we hit or that hit us; nearby players only count on these.
         private readonly HashSet<int> m_ourTargets = new();
 
@@ -346,14 +362,26 @@ public sealed class EncounterTracker
         public double Seconds(DateTime now) =>
             m_pausedSeconds + (m_runningSince is { } since ? Math.Max(0, (now - since).TotalSeconds) : 0);
 
+        // Set while every engaged enemy is dead: the fight ends a little later.
+        public DateTime? AllDeadSince { get; private set; }
+
         public void Engage(int? enemyId, DateTime time)
         {
+            // A DoT tick that lands just after the death must not bring the enemy (and the
+            // clock) back: it would never die again and the clock would run on.
+            if (enemyId is int dead && m_dead.TryGetValue(dead, out DateTime died)
+                && (time - died).TotalSeconds < RecentlyDeadSeconds)
+            {
+                return;
+            }
+
             if (enemyId is int id)
             {
                 m_engaged.Add(id);
             }
 
             m_runningSince ??= time;
+            this.AllDeadSince = null;
             if (time > this.LastCombat)
             {
                 this.LastCombat = time;
@@ -362,11 +390,17 @@ public sealed class EncounterTracker
 
         public void Disengage(int enemyId, DateTime time)
         {
+            m_dead[enemyId] = time;
             if (m_engaged.Remove(enemyId) && m_engaged.Count == 0)
             {
                 this.Pause(time);
+                this.AllDeadSince = time;
             }
         }
+
+        private const double RecentlyDeadSeconds = 10;
+
+        private readonly Dictionary<int, DateTime> m_dead = new();
 
         public void Pause(DateTime time)
         {
@@ -424,6 +458,7 @@ public sealed class EncounterTracker
             return new EncounterSnapshot
             {
                 Title = string.IsNullOrEmpty(title) ? "Encounter" : title,
+                IsBoss = this.HasBoss,
                 Seconds = seconds,
                 Active = this.Active,
                 Combatants = m_players.Values.Select(t => new Combatant

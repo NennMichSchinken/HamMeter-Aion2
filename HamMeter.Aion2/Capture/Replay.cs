@@ -1,6 +1,7 @@
 using System.Text;
 using HamMeter.Classic;
 using HamMeter.Combat;
+using HamMeter.Game;
 using HamMeter.Protocol;
 using Microsoft.Extensions.Logging;
 
@@ -39,6 +40,7 @@ public static class Replay
         engine.Router.On(Opcodes.Death, p =>
         {
             int id = (int)PacketReader.Body(p).ReadVarInt();
+            Deaths[id] = now;
             if (targets.TryGetValue(id, out var t))
             {
                 targets[id] = t with { Died = now };
@@ -51,6 +53,51 @@ public static class Replay
         // HAMMETER_FIND=<text>: which opcodes carry this text (UTF-8), e.g. a character name.
         byte[]? find = Environment.GetEnvironmentVariable("HAMMETER_FIND") is { Length: > 0 } f ? System.Text.Encoding.UTF8.GetBytes(f) : null;
         var found = new List<string>();
+
+        // HAMMETER_WINDOW=HH:mm:ss-HH:mm:ss: every hit and tick in that time span.
+        var window = new List<string>();
+        if (Environment.GetEnvironmentVariable("HAMMETER_WINDOW") is { Length: > 0 } span && span.Split('-') is [var from, var to])
+        {
+            TimeSpan a = TimeSpan.Parse(from), b = TimeSpan.Parse(to);
+            engine.Router.On(Opcodes.Hit, p =>
+            {
+                if (now.TimeOfDay < a || now.TimeOfDay > b)
+                {
+                    return;
+                }
+
+                PacketReader r = PacketReader.Body(p);
+                int target = (int)r.ReadVarInt();
+                uint layout = r.ReadVarInt() & 0x0F;
+                r.ReadVarInt();
+                int actor = (int)r.ReadVarInt();
+                int skill = (int)r.ReadU32();
+                r.ReadU8();
+                r.ReadVarInt();
+                r.Skip(layout == 4 ? 8 : 11);
+                r.ReadVarInt();
+                window.Add($"  {now:HH:mm:ss.f} hit  actor {actor} -> {target} skill {skill} amount {r.ReadVarInt()}");
+            });
+            engine.Router.On(Opcodes.Tick, p =>
+            {
+                if (now.TimeOfDay < a || now.TimeOfDay > b)
+                {
+                    return;
+                }
+
+                PacketReader r = PacketReader.Body(p);
+                int target = (int)r.ReadVarInt();
+                byte type = r.ReadU8();
+                int actor = (int)r.ReadVarInt();
+                r.ReadVarInt();
+                int skill = (int)(r.ReadU32() / 100);
+                window.Add($"  {now:HH:mm:ss.f} tick actor {actor} -> {target} type {type:X2} skill {skill} amount {r.ReadVarInt()}");
+            });
+        }
+
+        double clockBefore = 0;
+        DateTime? idleSince = null;
+        var idleRuns = new List<string>();
 
         var opcodes = new Dictionary<ushort, int>();
         var expanded = new List<byte[]>();
@@ -85,6 +132,28 @@ public static class Replay
             }
 
             engine.Stream.Dispatch(packet);
+
+            // Fight clock running while nobody hit anything for 3 s: DPS sinks there.
+            if (tracker.CurrentAt(now) is { Active: true } live)
+            {
+                DateTime lastHit = targets.Count == 0 ? DateTime.MinValue : targets.Values.Max(t => t.LastHit);
+                bool idle = (now - lastHit).TotalSeconds > 3;
+                if (idle && live.Seconds > clockBefore + 0.2)
+                {
+                    idleSince ??= now;
+                }
+                else if (!idle || live.Seconds <= clockBefore + 0.2)
+                {
+                    if (idleSince is { } s && (now - s).TotalSeconds >= 2)
+                    {
+                        idleRuns.Add($"  {s:HH:mm:ss} - {now:HH:mm:ss} ({(now - s).TotalSeconds:0}s), last hit {lastHit:HH:mm:ss}, engaged: {string.Join(", ", tracker.Engaged().Select(e => engine.Entities.MobCode(e) is int mc ? $"{e} ({NpcData.Get(mc)?.Name})" : $"{e} (no spawn seen{(Deaths.ContainsKey(e) ? ", died" : string.Empty)})"))}");
+                    }
+
+                    idleSince = null;
+                }
+
+                clockBefore = live.Seconds;
+            }
         }
 
         tracker.Tick(now.AddHours(1)); // finish the last fight
@@ -129,6 +198,23 @@ public static class Replay
             report.AppendLine();
         }
 
+        report.AppendLine("Fight clock running while nobody hit anything:");
+        idleRuns.ForEach(r => report.AppendLine(r));
+        if (window.Count > 0)
+        {
+            report.AppendLine().AppendLine("Hits and ticks in HAMMETER_WINDOW:");
+            window.ForEach(w => report.AppendLine(w));
+        }
+
+        report.AppendLine();
+        report.AppendLine("Non-players that hit the user (first | last | hits | damage | skill | death):");
+        foreach ((int attacker, var a) in Attackers.OrderBy(kv => kv.Value.First))
+        {
+            string died = Deaths.TryGetValue(attacker, out DateTime d) ? $"died {d:HH:mm:ss}" : "NO DEATH SEEN";
+            report.AppendLine($"  entity {attacker} ({a.Code}): {a.First:HH:mm:ss} | {a.Last:HH:mm:ss} | {a.Hits} | {a.Damage:N0} | {a.Skill} | {died}");
+        }
+
+        report.AppendLine();
         report.AppendLine("Hits by the user on players:");
         Unusual.ForEach(u => report.AppendLine(u));
         report.AppendLine();
@@ -169,6 +255,10 @@ public static class Replay
 
     private static readonly List<string> Unusual = new();
 
+    private static readonly Dictionary<int, (string Code, DateTime First, DateTime Last, int Hits, long Damage, int Skill)> Attackers = new();
+
+    private static readonly Dictionary<int, DateTime> Deaths = new();
+
     // 04 38 target, actor and amount (docs/protocol.md §5.1), for hits by the user.
     private static void NoteHit(
         byte[] packet,
@@ -188,6 +278,15 @@ public static class Replay
         r.ReadVarInt();
         long amount = r.ReadVarInt();
 
+        // Non-players hitting the user: they keep the fight clock running until they die.
+        if (engine.Entities.Player(target) is { IsUser: true } && engine.Entities.Player(actor) is null && !engine.Entities.IsSummon(actor))
+        {
+            string code = engine.Entities.MobCode(actor) is int mc ? $"mob {mc} {NpcData.Get(mc)?.Name}" : "no spawn seen";
+            Attackers[actor] = Attackers.TryGetValue(actor, out var a)
+                ? a with { Last = now, Hits = a.Hits + 1, Damage = a.Damage + amount }
+                : (code, now, now, 1, amount, skill);
+        }
+
         bool byUser = engine.Entities.Player(actor) is { IsUser: true } || engine.Entities.SummonOwner(actor) is int owner
             && engine.Entities.Player(owner) is { IsUser: true };
         bool fromUserId = engine.Entities.UserId is null && engine.Entities.Player(actor) is not null;
@@ -200,6 +299,11 @@ public static class Replay
         {
             Unusual.Add($"  {now:HH:mm:ss} actor {actor} hit player {target} with skill {skill}: {amount:N0}");
             return;
+        }
+
+        if (engine.Entities.Player(actor) is null)
+        {
+            return; // a monster hitting someone, see Attackers
         }
 
         targets[target] = targets.TryGetValue(target, out var t)

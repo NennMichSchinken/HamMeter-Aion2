@@ -116,7 +116,8 @@ public sealed class HamMeterOverlay : Overlay
             }
         }
 
-        m_tracker.CombatTimeoutSeconds = m_config.CombatTimeout;
+        m_tracker.FightEndSeconds = m_config.FightEnd;
+        m_tracker.IdleTimeoutSeconds = Math.Max(m_config.CombatTimeout, m_config.FightEnd);
         m_tracker.Tick(DateTime.Now);
 
         m_settings.Draw();

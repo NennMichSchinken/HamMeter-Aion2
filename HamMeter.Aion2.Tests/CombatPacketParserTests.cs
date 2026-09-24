@@ -104,12 +104,16 @@ public class CombatPacketParserTests
     }
 
     [Fact]
-    public void FightEnds_AfterTimeout_AndGoesToHistory()
+    public void WithoutAnyDeath_TheFightEndsAfterTheIdleTimeout_AndGoesToHistory()
     {
-        m_tracker.CombatTimeoutSeconds = 5;
+        DateTime t0 = new(2026, 9, 24, 12, 0, 0);
+        m_parser.Clock = () => t0;
+        m_tracker.IdleTimeoutSeconds = 5;
         this.Hit(Gladiator, Mob, GladiatorSkill, 1_000);
 
-        m_tracker.Tick(DateTime.Now.AddSeconds(6));
+        m_tracker.Tick(t0.AddSeconds(4));
+        Assert.True(m_tracker.InCombat);
+        m_tracker.Tick(t0.AddSeconds(6));
 
         Assert.False(m_tracker.InCombat);
         Assert.Equal(1, m_tracker.PastCount);
@@ -117,7 +121,7 @@ public class CombatPacketParserTests
     }
 
     [Fact]
-    public void ChainPulls_StayOneFight_AndWalkingIsNotFightTime()
+    public void LikeWoW_EveryPackIsAFight_WhenTheNextPullComesLater()
     {
         DateTime t0 = new(2026, 9, 24, 12, 0, 0);
         DateTime now = t0;
@@ -126,21 +130,62 @@ public class CombatPacketParserTests
         this.Hit(Gladiator, Mob, GladiatorSkill, 1_000);
         now = t0.AddSeconds(4);
         this.Hit(Gladiator, Mob, GladiatorSkill, 1_000);
-        this.Died(Mob);                                   // clock pauses: 4 s so far
+        this.Died(Mob);                                   // clock stops at 4 s
 
-        now = t0.AddSeconds(20);                          // 16 s walking to the next mob
-        m_tracker.Tick(now);
-        this.Hit(Gladiator, Mob + 1, GladiatorSkill, 1_000);
-        now = t0.AddSeconds(25);
-        this.Hit(Gladiator, Mob + 1, GladiatorSkill, 1_000);
-        this.Died(Mob + 1);                               // 4 + 5 = 9 s
+        m_tracker.Tick(t0.AddSeconds(8));                // still within the 5 s fight end
+        Assert.True(m_tracker.InCombat);
+        Assert.Equal(4, m_tracker.CurrentAt(t0.AddSeconds(8))!.Seconds, 3); // DPS no longer sinks
 
-        m_tracker.Tick(t0.AddSeconds(60));
+        m_tracker.Tick(t0.AddSeconds(10));               // 6 s after the kill: over
+        now = t0.AddSeconds(20);
+        this.Hit(Gladiator, Mob + 1, GladiatorSkill, 1_000);
 
         Assert.Equal(1, m_tracker.PastCount);
+        Assert.Equal(4, m_tracker.GetPast(0)!.Seconds, 3);
+        Assert.Equal(1_000, m_tracker.Current!.Combatants.Single().DamageTotal);
+    }
+
+    [Fact]
+    public void TheNextPullWithinTheFightEnd_StaysOneFight_WithoutTheGap()
+    {
+        DateTime t0 = new(2026, 9, 24, 12, 0, 0);
+        DateTime now = t0;
+        m_parser.Clock = () => now;
+
+        this.Hit(Gladiator, Mob, GladiatorSkill, 1_000);
+        now = t0.AddSeconds(4);
+        this.Died(Mob);
+        now = t0.AddSeconds(7);                          // 3 s to the next mob
+        m_tracker.Tick(now);
+        this.Hit(Gladiator, Mob + 1, GladiatorSkill, 1_000);
+        now = t0.AddSeconds(12);
+        this.Died(Mob + 1);
+        m_tracker.Tick(t0.AddSeconds(30));
+
+        Assert.Equal(1, m_tracker.PastCount);
+        Assert.Equal(9, m_tracker.GetPast(0)!.Seconds, 3); // 4 + 5, the 3 s walk not counted
+    }
+
+    [Fact]
+    public void ADotTickRightAfterTheKill_DoesNotStartTheClockAgain()
+    {
+        DateTime t0 = new(2026, 9, 24, 12, 0, 0);
+        DateTime now = t0;
+        m_parser.Clock = () => now;
+
+        this.Hit(Gladiator, Mob, GladiatorSkill, 1_000);
+        now = t0.AddSeconds(4);
+        this.Died(Mob);
+        now = t0.AddSeconds(4.5);
+        this.Effect(Mob, Gladiator, 0x02, GladiatorSkill, 50); // DoT lands after the death
+
+        Assert.Equal(4, m_tracker.CurrentAt(t0.AddSeconds(8))!.Seconds, 3);
+        m_tracker.Tick(t0.AddSeconds(10));
+
+        Assert.False(m_tracker.InCombat);
         EncounterSnapshot fight = m_tracker.GetPast(0)!;
-        Assert.Equal(9, fight.Seconds, 3);
-        Assert.Equal(4_000, fight.Combatants.Single().DamageTotal);
+        Assert.Equal(4, fight.Seconds, 3);
+        Assert.Equal(1_050, fight.Combatants.Single().DamageTotal); // the tick still counts
     }
 
     [Fact]
@@ -156,23 +201,6 @@ public class CombatPacketParserTests
         m_tracker.Tick(t0.AddSeconds(60));
 
         Assert.Equal(20, m_tracker.GetPast(0)!.Seconds, 3);
-    }
-
-    [Fact]
-    public void LongerThanTheTimeout_StartsANewFight()
-    {
-        DateTime t0 = new(2026, 9, 24, 12, 0, 0);
-        DateTime now = t0;
-        m_parser.Clock = () => now;
-
-        this.Hit(Gladiator, Mob, GladiatorSkill, 1_000);
-        this.Died(Mob);
-        m_tracker.Tick(t0.AddSeconds(31));               // default timeout: 30 s
-        now = t0.AddSeconds(40);
-        this.Hit(Gladiator, Mob + 1, GladiatorSkill, 1_000);
-
-        Assert.Equal(1, m_tracker.PastCount);
-        Assert.True(m_tracker.InCombat);
     }
 
     [Fact]

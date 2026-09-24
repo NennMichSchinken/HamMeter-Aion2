@@ -14,7 +14,8 @@ public class Config
     public bool OnlyInCombat = false;
     public bool ConfirmReset = true;
     public bool Locked = false;
-    public float CombatTimeout = 30f;
+    public float FightEnd = 5f;        // seconds after the last enemy died
+    public float CombatTimeout = 30f;  // safety: seconds without any damage
     public float BackgroundOpacity = 0.8f;
     public Vector4 BackgroundColor = new(0.086f, 0.086f, 0.102f, 1f); // #16161A (settings window bg)
 

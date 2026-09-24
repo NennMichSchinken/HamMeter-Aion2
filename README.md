@@ -12,7 +12,7 @@ HamMeter reads the game's network packets passively (via Npcap, or Windows raw s
 - **Capture** (`HamMeter.Aion2/Capture`): finds `Aion2.exe`'s own connections and reads only those, through Npcap (also with VPN / ping boosters; tested with LagoFast) or raw sockets.
 - **Packets** (`HamMeter.Aion2/Protocol`): cuts the stream into game packets, unpacks LZ4 bundles and routes packets by opcode.
 - **Game** (`HamMeter.Aion2/Game`): who is who (your character, other players, summons and their owners), what skill codes mean (class, heals, damage over time) and the monster list for names and bosses.
-- **Fights** (`HamMeter.Aion2/Combat`): damage done, damage taken, healing, deaths. Pulls in quick succession stay one fight, bosses always get a fight of their own, and walking between mobs does not count as fight time.
+- **Fights** (`HamMeter.Aion2/Combat`): damage done, damage taken, healing, deaths. Like combat in WoW, every pack is a fight of its own: the fight clock stops when the last enemy dies, so walking never lowers your DPS. Bosses always get a fight of their own.
 - **The overlay** (`HamMeter.Aion2/UI`): a port of the FFXIV HamMeter's ImGui drawing code onto [ClickableTransparentOverlay](https://github.com/zaafar/ClickableTransparentOverlay).
 
 **Transition:** until HamMeter's reader has been tested in groups, the reader HamMeter first shipped with — built on [Kuroukihime/AIon2-Dps-Meter](https://github.com/Kuroukihime/AIon2-Dps-Meter) (GPL-3.0, git submodule `external/AionDpsMeter`) — is still included and is the default. Switch with *Settings → Data & App → Use HamMeter's own packet reader*. The old reader, the submodule and everything taken from it will be removed once HamMeter's reader is the default.
@@ -43,7 +43,7 @@ HamMeter reads the game's network packets passively (via Npcap, or Windows raw s
 
 - Metrics: Damage Done, Damage Taken, Healing Done, Healing Taken, Deaths
 - Current fight / Overall / per-fight history, named after the boss or main target
-- Boss fights are kept apart from the trash before and after them
+- Boss fights are kept apart from the trash before and after them and marked with a crown in the history
 - Class icons or text tags, per-class or per-role colours (fully editable)
 - Nine bar textures to choose from (Flat, Smooth, Gradient, Bevel, Sheen, Glow, Glow top, Glow bottom, Aurora)
 - Lives in the notification area (tray icon), no taskbar button

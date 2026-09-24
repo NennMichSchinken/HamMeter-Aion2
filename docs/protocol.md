@@ -455,7 +455,9 @@ the one both other meters use (A2Tools' is the more complete one); it is taken u
 GPL-3.0 license with credit, as a fixed copy — HamMeter does not depend on it at runtime
 from anywhere else. Everything else HamMeter builds from its own recordings.
 
-**Fights and bosses:** a boss (monster list) always gets its own fight: the first hit on
+**Fights (like combat in WoW):** a fight lasts while enemies are engaged; its clock stops when the last one dies (`04 8D`) and the fight ends a few seconds later (setting, default 5 s) unless the next pull comes first. A DoT tick that lands right after a death must not re-engage the dead enemy — that bug let the clock run through the walking between packs (recording of 2026-09-24, 23:05). Without any death a fight ends after 30 s without damage.
+
+**Bosses:** a boss (monster list) always gets its own fight: the first hit on
 it closes a running trash fight, and the fight ends when the last boss dies (§5.3).
 Confirmed mob codes from recordings: 2100456 Red Cap Fungen, 2100041 Red Cap Fungie,
 2700914 Toblini (boss, sealed dungeon; the fight ended with its death), 2700915 Hideout

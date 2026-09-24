@@ -43,6 +43,9 @@ public sealed class EncounterSnapshot
     public string Title { get; init; } = string.Empty;
     public double Seconds { get; init; }
     public bool Active { get; init; }
+
+    // A boss fight (monster list); marked with a crown in the history.
+    public bool IsBoss { get; init; }
     public IReadOnlyList<Combatant> Combatants { get; init; } = [];
 
     public string Duration => FormatDuration(this.Seconds);

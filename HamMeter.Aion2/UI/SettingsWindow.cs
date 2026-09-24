@@ -187,10 +187,10 @@ public sealed class SettingsWindow
                 changed |= CheckboxRow("Only show in combat", ref m_config.OnlyInCombat);
                 changed |= CheckboxRow("Confirm before reset", ref m_config.ConfirmReset);
                 ImGui.Dummy(new Vector2(0f, 6f));
-                changed |= SliderWhole("Combat timeout (s)", ref m_config.CombatTimeout, 3f, 120f);
+                changed |= SliderWhole("Fight ends after (s)", ref m_config.FightEnd, 0f, 60f);
                 ImGui.Indent(24f);
-                ImGui.TextDisabled("A fight ends after this many seconds without damage.");
-                ImGui.TextDisabled("Walking between mobs does not count as fight time.");
+                ImGui.TextDisabled("Seconds after the last enemy died. The next pull within");
+                ImGui.TextDisabled("that time stays in the same fight. Bosses always end at once.");
                 ImGui.Unindent(24f);
                 ImGui.Dummy(new Vector2(0f, 6f));
                 changed |= Slider("Background opacity", ref m_config.BackgroundOpacity, 0f, 1f);
