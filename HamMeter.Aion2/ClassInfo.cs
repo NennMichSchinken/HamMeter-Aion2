@@ -74,7 +74,24 @@ public static class ClassInfo
 
     private static Vector4 Rgb(int r, int g, int b) => new(r / 255f, g / 255f, b / 255f, 1f);
 
+    // The game's own class colours (the main colour of each official icon) at 80 %
+    // brightness, so the icon stands out on its bar and white text stays readable.
     public static Dictionary<string, Vector4> DefaultColors() => new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["TEM"] = Rgb(70, 97, 165),
+        ["CLR"] = Rgb(148, 119, 53),
+        ["CHN"] = Rgb(145, 100, 46),
+        ["GLA"] = Rgb(59, 118, 132),
+        ["ASN"] = Rgb(44, 109, 35),
+        ["BRW"] = Rgb(125, 29, 32),
+        ["RNG"] = Rgb(38, 102, 74),
+        ["SOR"] = Rgb(99, 59, 154),
+        ["ELE"] = Rgb(128, 47, 129),
+    };
+
+    // Defaults before v3 of the config; colours still equal to these were never changed
+    // by the user and move to the new defaults (Config.Migrate).
+    public static Dictionary<string, Vector4> DefaultColorsV2() => new(StringComparer.OrdinalIgnoreCase)
     {
         ["TEM"] = Rgb(150, 190, 230),
         ["CLR"] = Rgb(250, 245, 225),

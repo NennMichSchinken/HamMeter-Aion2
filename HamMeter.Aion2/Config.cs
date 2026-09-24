@@ -6,7 +6,7 @@ namespace HamMeter;
 
 public class Config
 {
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -108,13 +108,27 @@ public class Config
         return config;
     }
 
-    private void Migrate()
+    internal void Migrate()
     {
         // v2: the combat timeout default went from 10 to 30 s (fights no longer split
         // while walking to the next mob). Only the old default is moved along.
         if (this.Version < 2 && Math.Abs(this.CombatTimeout - 10f) < 0.01f)
         {
             this.CombatTimeout = 30f;
+        }
+
+        // v3: class colours follow the official class icons. Colours the user changed stay.
+        if (this.Version < 3)
+        {
+            Dictionary<string, Vector4> old = ClassInfo.DefaultColorsV2();
+            Dictionary<string, Vector4> now = ClassInfo.DefaultColors();
+            foreach (string job in this.JobColors.Keys.ToList())
+            {
+                if (old.TryGetValue(job, out Vector4 o) && Vector4.DistanceSquared(this.JobColors[job], o) < 1e-5f)
+                {
+                    this.JobColors[job] = now[job];
+                }
+            }
         }
 
         this.Version = CurrentVersion;
