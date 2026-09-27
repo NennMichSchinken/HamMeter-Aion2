@@ -1,5 +1,4 @@
 using System.Text;
-using HamMeter.Classic;
 using HamMeter.Combat;
 using HamMeter.Game;
 using HamMeter.Protocol;
@@ -8,9 +7,8 @@ using Microsoft.Extensions.Logging;
 namespace HamMeter.Capture;
 
 // Development tool (HamMeter.exe --replay <file.hmrec>): runs a packet recording through
-// HamMeter's own reader in recorded time and writes <file>.report.txt with every fight,
-// its per-skill totals, a comparison with the classic reader and how often each opcode
-// occurred.
+// HamMeter's reader in recorded time and writes <file>.report.txt with every fight, its
+// per-skill totals and how often each opcode occurred.
 public static class Replay
 {
     public static void Run(string path)
@@ -18,16 +16,12 @@ public static class Replay
         var report = new StringBuilder();
         report.AppendLine($"HamMeter replay of {Path.GetFileName(path)}").AppendLine();
 
-        // Kuroukihime's settings service writes into the working directory.
-        Environment.CurrentDirectory = Path.GetTempPath();
-
         using ILoggerFactory logs = LoggerFactory.Create(b => b
             .SetMinimumLevel(LogLevel.Information)
             .AddProvider(new FileLoggerProvider(path + ".log", LogLevel.Information)));
 
-        // ----- HamMeter's own reader -----
         var tracker = new EncounterTracker();
-        using OwnEngine engine = OwnEngine.Offline(tracker, logs);
+        using PacketEngine engine = PacketEngine.Offline(tracker, logs);
 
         DateTime now = DateTime.MinValue;
         engine.Parser.Clock = () => now;
@@ -44,6 +38,22 @@ public static class Replay
             if (targets.TryGetValue(id, out var t))
             {
                 targets[id] = t with { Died = now };
+            }
+        });
+
+        // Every change of the party list (02 97): which bit packing read it, or the packet
+        // when none did (§6.6).
+        var parties = new List<string>();
+        string? lastParty = null;
+        engine.Router.On(Opcodes.PartyList, p =>
+        {
+            string party = PartyPacket.Read(p) is var (members, packing)
+                ? $"{packing}: {(members.Count == 0 ? "no party" : string.Join(", ", members.Select(m => $"{m.Name} ({m.CharacterId})")))}"
+                : $"NOT READABLE ({p.Length} bytes): {Convert.ToHexString(p)}";
+            if (party != lastParty)
+            {
+                lastParty = party;
+                parties.Add($"  {now:HH:mm:ss} {party}");
             }
         });
 
@@ -158,23 +168,19 @@ public static class Replay
 
         tracker.Tick(now.AddHours(1)); // finish the last fight
 
-        // ----- Classic reader on the same packets -----
-        var classicTracker = new EncounterTracker();
-        var classic = new List<EncounterSnapshot>();
-        classicTracker.Finished += classic.Add;
-        ClassicReplay.Run(Read(path, new StringBuilder()), classicTracker);
-
         report.AppendLine($"Framed packets: {records:N0}");
         report.AppendLine($"Own character: {(engine.Entities.UserId is int id ? $"entity {id}" : "not seen")}");
-        report.AppendLine($"Fights: HamMeter {own.Count}, classic {classic.Count}").AppendLine();
+        report.AppendLine($"Fights: {own.Count}").AppendLine();
+        report.AppendLine("Party lists (02 97):");
+        parties.ForEach(l => report.AppendLine(l));
+        report.AppendLine();
 
-        for (int i = 0; i < Math.Max(own.Count, classic.Count); i++)
+        for (int i = 0; i < own.Count; i++)
         {
-            EncounterSnapshot? mine = i < own.Count ? own[i].Fight : null;
-            EncounterSnapshot? theirs = i < classic.Count ? classic[i] : null;
-            report.AppendLine($"== Fight {i + 1}: {(mine ?? theirs)!.Duration} ==");
-            Compare(report, mine, theirs);
-            if (i < own.Count && own[i].Skills is { } skills)
+            (EncounterSnapshot fight, string? skills) = own[i];
+            report.AppendLine($"== Fight {i + 1}: {fight.Title}{(fight.IsBoss ? " (boss)" : string.Empty)}, {fight.Duration} ==");
+            Totals(report, fight);
+            if (skills is not null)
             {
                 report.AppendLine(skills);
             }
@@ -255,7 +261,7 @@ public static class Replay
     // 04 38 target, actor and amount (docs/protocol.md §5.1), for hits by the user.
     private static void NoteHit(
         byte[] packet,
-        OwnEngine engine,
+        PacketEngine engine,
         Dictionary<int, (DateTime FirstHit, DateTime LastHit, long Damage, DateTime? Died)> targets,
         DateTime now)
     {
@@ -327,26 +333,12 @@ public static class Replay
         }
     }
 
-    private static void Compare(StringBuilder report, EncounterSnapshot? mine, EncounterSnapshot? theirs)
+    private static void Totals(StringBuilder report, EncounterSnapshot fight)
     {
-        var ids = (mine?.Combatants.Select(c => c.Id) ?? []).Union(theirs?.Combatants.Select(c => c.Id) ?? []);
-        foreach (int id in ids)
+        foreach (Combatant c in fight.Combatants)
         {
-            Combatant? a = mine?.Combatants.FirstOrDefault(c => c.Id == id);
-            Combatant? b = theirs?.Combatants.FirstOrDefault(c => c.Id == id);
-            Combatant any = (a ?? b)!;
-            report.AppendLine($"  {any.Name}{(any.IsUser ? " (you)" : string.Empty)} [{any.Job}]");
-            Row(report, "damage", a?.DamageTotal, b?.DamageTotal);
-            Row(report, "healed", a?.HealedTotal, b?.HealedTotal);
-            Row(report, "taken", a?.DamageTaken, b?.DamageTaken);
-            Row(report, "healing taken", a?.HealingTaken, b?.HealingTaken);
-            Row(report, "deaths", a?.DeathCount, b?.DeathCount);
+            report.AppendLine($"  {c.Name}{(c.IsUser ? " (you)" : string.Empty)} [{c.Job}]");
+            report.AppendLine($"    damage {c.DamageTotal,12:N0}   healed {c.HealedTotal,12:N0}   taken {c.DamageTaken,12:N0}   healing taken {c.HealingTaken,12:N0}   deaths {c.DeathCount}");
         }
-    }
-
-    private static void Row(StringBuilder report, string what, double? mine, double? theirs)
-    {
-        string verdict = mine == theirs ? "same" : $"DIFFERS by {(mine ?? 0) - (theirs ?? 0):N0}";
-        report.AppendLine($"    {what,-14} HamMeter {mine?.ToString("N0") ?? "-",10}   classic {theirs?.ToString("N0") ?? "-",10}   {verdict}");
     }
 }

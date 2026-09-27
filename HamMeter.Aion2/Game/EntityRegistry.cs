@@ -1,6 +1,6 @@
 namespace HamMeter.Game;
 
-// HamMeter's own directory of the entities in the current zone. Only the capture
+// The directory of the entities in the current zone. Only the capture
 // thread writes and reads it (through the combat and entity parsers).
 public sealed class EntityRegistry : IEntityDirectory
 {
@@ -10,6 +10,8 @@ public sealed class EntityRegistry : IEntityDirectory
     private readonly Dictionary<int, Entry> m_players = new();
     private readonly Dictionary<int, int> m_summons = new();
     private readonly Dictionary<int, int> m_mobCodes = new();
+    private readonly Dictionary<int, uint> m_characterIds = new();
+    private Dictionary<uint, string> m_party = new();
     private string? m_userName;
 
     public event Action<int, int>? SummonRegistered;
@@ -72,6 +74,28 @@ public sealed class EntityRegistry : IEntityDirectory
         this.SummonRegistered?.Invoke(summonId, ownerId);
     }
 
+    // 02 97: the current party. Replaces the previous one; an empty list = no party.
+    public void SetParty(IReadOnlyList<PartyMember> members)
+    {
+        m_party = members.GroupBy(m => m.CharacterId).ToDictionary(g => g.Key, g => g.First().Name);
+        foreach ((int entityId, uint characterId) in m_characterIds)
+        {
+            this.NameFromParty(entityId, characterId);
+        }
+    }
+
+    // 20 36: which character an entity is, so party data reaches it.
+    public void LinkCharacter(int entityId, uint characterId)
+    {
+        if (m_characterIds.Count >= MaxPlayers && !m_characterIds.ContainsKey(entityId))
+        {
+            m_characterIds.Clear(); // stale links from earlier zones; the party ones come again
+        }
+
+        m_characterIds[entityId] = characterId;
+        this.NameFromParty(entityId, characterId);
+    }
+
     public void SetMobCode(int entityId, int mobCode) => m_mobCodes[entityId] = mobCode;
 
     public int? MobCode(int entityId) => m_mobCodes.TryGetValue(entityId, out int code) ? code : null;
@@ -90,6 +114,10 @@ public sealed class EntityRegistry : IEntityDirectory
         if (!m_players.TryGetValue(entityId, out Entry? e))
         {
             e = this.Add(entityId);
+            if (m_characterIds.TryGetValue(entityId, out uint characterId) && m_party.TryGetValue(characterId, out string? name))
+            {
+                e.Name = name;
+            }
         }
 
         if (e.ClassId == 0)
@@ -104,6 +132,21 @@ public sealed class EntityRegistry : IEntityDirectory
     public string TargetName(int entityId) => this.Npc(entityId)?.Name ?? string.Empty;
 
     public bool IsBoss(int entityId) => this.Npc(entityId)?.IsBoss == true;
+
+    // By the character link, or by name when the link packet was missed (§4).
+    public bool InParty(int entityId) =>
+        m_party.Count > 0
+        && ((m_characterIds.TryGetValue(entityId, out uint characterId) && m_party.ContainsKey(characterId))
+            || (m_players.TryGetValue(entityId, out Entry? e) && e.Name is not null && m_party.ContainsValue(e.Name)));
+
+    // Party members are players; a linked one without a name yet gets it from the list.
+    private void NameFromParty(int entityId, uint characterId)
+    {
+        if (m_party.TryGetValue(characterId, out string? name) && m_players.TryGetValue(entityId, out Entry? e) && e.Name is null)
+        {
+            this.SetName(entityId, name, isUser: false);
+        }
+    }
 
     private NpcInfo? Npc(int entityId) => this.MobCode(entityId) is int code ? NpcData.Get(code) : null;
 

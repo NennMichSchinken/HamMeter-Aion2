@@ -26,6 +26,9 @@ public interface IEntityDirectory
 
     // Whether the user's own entity is known; until then every player counts.
     bool UserKnown { get; }
+
+    // Whether the entity is a member of the user's party (02 97).
+    bool InParty(int entityId);
 }
 
 // What skill codes mean (docs/protocol.md §7).

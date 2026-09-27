@@ -10,7 +10,7 @@ using static HamMeter.Tests.CombatPacketParserTests;
 
 namespace HamMeter.Tests;
 
-// HamMeter's own packet reader (docs/protocol.md), built from synthetic packets.
+// HamMeter's packet reader (docs/protocol.md), built from synthetic packets.
 public class ProtocolTests
 {
     private static readonly byte[] KeepAlive = Packet(Opcodes.KeepAlive, w => w.Bytes(8));
@@ -123,7 +123,7 @@ public class ProtocolTests
     public void Stream_NamesTheUser_AndCreditsSummonDamageToTheOwner()
     {
         var tracker = new EncounterTracker();
-        using OwnEngine engine = OwnEngine.Offline(tracker, NullLoggerFactory.Instance);
+        using PacketEngine engine = PacketEngine.Offline(tracker, NullLoggerFactory.Instance);
 
         const int User = 1001;
         const int Spirit = 7000;
@@ -163,7 +163,7 @@ public class ProtocolTests
     public void UserState_IdentifiesTheUser_AndPlayersNearbyOnlyCountOnOurEnemies()
     {
         var tracker = new EncounterTracker();
-        using OwnEngine engine = OwnEngine.Offline(tracker, NullLoggerFactory.Instance);
+        using PacketEngine engine = PacketEngine.Offline(tracker, NullLoggerFactory.Instance);
 
         const int User = 11195;
         const int Stranger = 11207;
@@ -190,7 +190,7 @@ public class ProtocolTests
     public void MonsterDeath_NamesTheKiller_SoTheUserGetsANameWithoutZoneChange()
     {
         var tracker = new EncounterTracker();
-        using OwnEngine engine = OwnEngine.Offline(tracker, NullLoggerFactory.Instance);
+        using PacketEngine engine = PacketEngine.Offline(tracker, NullLoggerFactory.Instance);
 
         const int User = 3580;
         const int Mob = 30824;
@@ -222,7 +222,7 @@ public class ProtocolTests
     public void Spawn_WithUnknownOwner_IsNotASummon()
     {
         var tracker = new EncounterTracker();
-        using OwnEngine engine = OwnEngine.Offline(tracker, NullLoggerFactory.Instance);
+        using PacketEngine engine = PacketEngine.Offline(tracker, NullLoggerFactory.Instance);
 
         engine.Stream.Dispatch(Packet(Opcodes.Spawn, w =>
         {

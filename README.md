@@ -2,20 +2,18 @@
 
 A minimalist, easy-to-read damage meter for **Aion 2**, with the same look and settings as [HamMeter for FFXIV](https://github.com/NennMichSchinken/HamMeter). It runs as a transparent overlay on top of the game.
 
-> **Status: early / experimental.** HamMeter reads the game with its own packet reader. Damage matches the in-game meter 1:1 in our tests; healing, deaths and boss fights are read as well. Party features (names of group members) still need testing in a group.
+> **Status: early / experimental.** Solo, damage matches the in-game meter 1:1 in our tests; healing, deaths and boss fights are read as well. Group play (party list, heals on others, damage taken by the tank) is being tested on the Global servers.
 
 ## How it works
 
 HamMeter reads the game's network packets passively (via Npcap, or Windows raw sockets when Npcap is not installed). It does not inject code, read or modify game memory, or send anything anywhere.
 
-- **Protocol** (`docs/protocol.md`): HamMeter's own description of the Aion 2 traffic — framing, compressed bundles, combat and entity packets — with the status of every part (confirmed, observed, open). All reading code is written from it.
+- **Protocol** (`docs/protocol.md`): the description of the Aion 2 traffic — framing, compressed bundles, combat, entity and party packets — with the status of every part (confirmed, observed, open). All reading code is written from it.
 - **Capture** (`HamMeter.Aion2/Capture`): finds `Aion2.exe`'s own connections and reads only those, through Npcap (also with VPN / ping boosters; tested with LagoFast) or raw sockets.
 - **Packets** (`HamMeter.Aion2/Protocol`): cuts the stream into game packets, unpacks LZ4 bundles and routes packets by opcode.
-- **Game** (`HamMeter.Aion2/Game`): who is who (your character, other players, summons and their owners), what skill codes mean (class, heals, damage over time) and the monster list for names and bosses.
-- **Fights** (`HamMeter.Aion2/Combat`): damage done, damage taken, healing, deaths. Like combat in WoW, every pack is a fight of its own: the fight clock stops when the last enemy dies, so walking never lowers your DPS. Bosses always get a fight of their own.
+- **Game** (`HamMeter.Aion2/Game`): who is who (your character, your party, other players, summons and their owners), what skill codes mean (class, heals, damage over time) and the monster list for names and bosses.
+- **Fights** (`HamMeter.Aion2/Combat`): damage done, damage taken, healing, deaths. Like combat in WoW, every pack is a fight of its own: the fight clock stops when the last enemy dies, so walking never lowers your DPS. Bosses always get a fight of their own. You and your party start fights; players who are merely nearby only count on enemies you fight too.
 - **The overlay** (`HamMeter.Aion2/UI`): a port of the FFXIV HamMeter's ImGui drawing code onto [ClickableTransparentOverlay](https://github.com/zaafar/ClickableTransparentOverlay).
-
-**Fallback:** HamMeter's own reader is the default. Until it has been tested in groups, the reader HamMeter first shipped with — built on [Kuroukihime/AIon2-Dps-Meter](https://github.com/Kuroukihime/AIon2-Dps-Meter) (GPL-3.0, git submodule `external/AionDpsMeter`) — stays included as a fallback (*Settings → Data & App → Use the classic packet reader*). It will then be removed together with the submodule.
 
 ## Principles
 
@@ -69,14 +67,12 @@ How the setup works: `HamMeter-Setup.exe` is our wizard, running without elevati
 ## Building
 
 ```bash
-git clone --recurse-submodules <this repo>
+git clone <this repo>
 dotnet build HamMeter.Aion2.slnx
 dotnet test HamMeter.Aion2.slnx
 ```
 
-(`--recurse-submodules` is only needed while the classic reader is still included.)
-
-Run a development build (add `-- --classic-reader` to use the fallback reader for that run):
+Run a development build:
 
 ```bash
 dotnet run --project HamMeter.Aion2 -c Release
@@ -109,9 +105,8 @@ The release key is created once with `dotnet run --project build\ReleaseSigner -
 
 Concept, design, and UX/UI by **NennMichSchinken**. The implementation was written with the help of AI (Claude) under my direction.
 
-- Monster names, boss flags and dungeon data: **taengu** ([A2Tools-DPS-Meter](https://github.com/taengu/A2Tools-DPS-Meter), GPL-3.0), see `HamMeter.Aion2/Game/Data/SOURCE.md`
-- Old reader (still included during the transition): **Kuroukihime** ([AIon2-Dps-Meter](https://github.com/Kuroukihime/AIon2-Dps-Meter), GPL-3.0)
-- Class icons: official AION 2 artwork by **NCSoft**, see `HamMeter.Aion2/Assets/Classes/SOURCE.md`
+- Monster list (names, boss flags): compiled by **taengu** (GPL-3.0), see `HamMeter.Aion2/Game/Data/SOURCE.md`
+- Class icons: official AION 2 artwork by **NCSoft**
 - Bar textures and styles: from **WispUI** (NennMichSchinken, MIT), the FFXIV suite HamMeter lives on in
 - Icons: [Lucide](https://lucide.dev) (ISC, see `HamMeter.Aion2/Assets/Icons/LICENSE-lucide.txt`)
 - Packet capture library: [SharpPcap](https://github.com/dotpcap/sharppcap) (MIT); LZ4: [K4os.Compression.LZ4](https://github.com/MiloszKrajewski/K4os.Compression.LZ4) (MIT)

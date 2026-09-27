@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using HamMeter.Capture;
-using HamMeter.Classic;
 using HamMeter.Combat;
 using HamMeter.UI;
 using HamMeter.Wizard;
@@ -22,7 +21,7 @@ public static class Program
             return;
         }
 
-        // Development: run a packet recording through HamMeter's own reader and write
+        // Development: run a packet recording through HamMeter's reader and write
         // a report next to it. Only the Windows account that recorded it can read it.
         int replay = Array.FindIndex(args, a => a.Equals("--replay", StringComparison.OrdinalIgnoreCase));
         if (replay >= 0 && replay + 1 < args.Length)
@@ -75,21 +74,7 @@ public static class Program
             .SetMinimumLevel(LogLevel.Information)
             .AddProvider(new FileLoggerProvider(Path.Combine(Config.DataDirectory, "HamMeter.log"), LogLevel.Information)));
 
-        // HamMeter's own reader; the classic one is a fallback (setting or --classic-reader
-        // for this run only).
-        bool own = config.OwnPacketReader && !args.Contains("--classic-reader", StringComparer.OrdinalIgnoreCase);
-        if (own)
-        {
-            services.AddSingleton<IPacketEngine>(sp => OwnEngine.Live(npcap, tracker, sp.GetRequiredService<ILoggerFactory>()));
-        }
-        else
-        {
-            // Kuroukihime's services write appsettings.user.json relative to the working
-            // directory; keep it with our config.
-            Environment.CurrentDirectory = Config.DataDirectory;
-            ClassicEngine.Register(services, npcap);
-        }
-
+        services.AddSingleton(sp => PacketEngine.Live(npcap, tracker, sp.GetRequiredService<ILoggerFactory>()));
         services.AddSingleton(tracker);
         services.AddSingleton<PacketRecorder>();
         services.AddSingleton(config);
@@ -99,10 +84,9 @@ public static class Program
         await using ServiceProvider sp = services.BuildServiceProvider();
         ILogger log = sp.GetRequiredService<ILoggerFactory>().CreateLogger("HamMeter");
 
-        IPacketEngine engine = sp.GetRequiredService<IPacketEngine>();
-        config.ActiveReader = own ? "HamMeter" : "Classic (fallback)";
-        log.LogInformation("HamMeter for Aion 2 starting (reader: {Engine}, capture: {Mode}, elevated: {Elevated})",
-            engine.Name, npcap ? "Npcap" : "raw socket", elevated);
+        PacketEngine engine = sp.GetRequiredService<PacketEngine>();
+        log.LogInformation("HamMeter for Aion 2 starting (capture: {Mode}, elevated: {Elevated})",
+            npcap ? "Npcap" : "raw socket", elevated);
 
         PacketRecorder recorder = sp.GetRequiredService<PacketRecorder>();
         recorder.DeleteExpired();

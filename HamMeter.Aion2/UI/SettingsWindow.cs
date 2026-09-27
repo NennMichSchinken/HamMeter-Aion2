@@ -322,18 +322,6 @@ public sealed class SettingsWindow
                 ImGui.TextDisabled("Encrypted, readable only by your Windows account.");
                 ImGui.TextDisabled($"Turns off on restart, deleted after {Capture.PacketRecorder.RetentionDays} days.");
                 ImGui.Unindent(24f);
-                bool classic = !m_config.OwnPacketReader;
-                if (CheckboxRow("Use the classic packet reader (fallback)", ref classic))
-                {
-                    m_config.OwnPacketReader = !classic;
-                    changed = true;
-                }
-
-                ImGui.Indent(24f);
-                ImGui.TextDisabled("Only if HamMeter's own reader misses something after a patch.");
-                ImGui.TextDisabled("Takes effect after restarting HamMeter.");
-                ImGui.TextDisabled($"Active now: {m_config.ActiveReader}");
-                ImGui.Unindent(24f);
                 SubHeading("Updates");
                 bool checkOnStart = m_updates.CheckOnStart;
                 if (CheckboxRow("Check for updates when HamMeter starts", ref checkOnStart))

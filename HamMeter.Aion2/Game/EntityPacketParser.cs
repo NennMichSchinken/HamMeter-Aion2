@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 namespace HamMeter.Game;
 
 // Reads who is who from the entity packets (docs/protocol.md §6) into the registry:
-// the user's own character, other players and summon owners.
+// the user's own character, other players, the party and summon owners.
 public sealed class EntityPacketParser(EntityRegistry registry, ILogger<EntityPacketParser> log)
 {
     private const int MaxNameBytes = 72;
@@ -21,6 +21,49 @@ public sealed class EntityPacketParser(EntityRegistry registry, ILogger<EntityPa
         router.On(Opcodes.Spawn, this.OnSpawn);
         router.On(Opcodes.UserState, this.OnUserState);
         router.On(Opcodes.Death, this.OnDeath);
+        router.On(Opcodes.PartyList, this.OnParty);
+        router.On(Opcodes.EntityLink, this.OnEntityLink);
+    }
+
+    // ----- 02 97: the party (§6.4) ------------------------------------------------------
+
+    // The game sends the list again on every member change; the log only gets news.
+    private string? m_lastParty;
+
+    private void OnParty(byte[] packet)
+    {
+        string party;
+        if (PartyPacket.Read(packet) is (var members, var packing))
+        {
+            registry.SetParty(members);
+            party = $"Party: {(members.Count == 0 ? "none" : string.Join(", ", members.Select(m => m.Name)))} (bit packing {packing})";
+        }
+        else
+        {
+            party = "Party list not readable";
+        }
+
+        if (party != m_lastParty)
+        {
+            m_lastParty = party;
+            log.LogInformation("{Party} ({Length} bytes)", party, packet.Length);
+        }
+    }
+
+    // ----- 20 36: entity id <-> character id (§6.3) ------------------------------------
+
+    // Body: 2 unknown bytes, entity varint, 4 unknown bytes, character id u32.
+    private void OnEntityLink(byte[] packet)
+    {
+        PacketReader r = PacketReader.Body(packet);
+        r.Skip(2);
+        int entityId = (int)r.ReadVarInt();
+        r.Skip(4);
+        uint characterId = r.ReadU32();
+        if (entityId > 0 && characterId > 0)
+        {
+            registry.LinkCharacter(entityId, characterId);
+        }
     }
 
     // ----- 04 8D: a monster's death names the player who killed it (§5.3) -------------

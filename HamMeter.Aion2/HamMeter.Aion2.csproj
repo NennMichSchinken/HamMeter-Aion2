@@ -21,26 +21,18 @@
 
   <ItemGroup>
     <PackageReference Include="ClickableTransparentOverlay" Version="11.1.0" />
-    <!-- HamMeter's own packet reader: LZ4 for "FF FF" bundles, SharpPcap for Npcap capture. -->
+    <!-- Packet reader: LZ4 for "FF FF" bundles, SharpPcap for Npcap capture. -->
     <PackageReference Include="K4os.Compression.LZ4" Version="1.3.8" />
     <PackageReference Include="SharpPcap" Version="6.3.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.2" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.2" />
-    <!-- Pinned above the transitive versions, which have published security advisories.
-         SQLite is only pulled in by the classic reader and goes with it. -->
+    <!-- Pinned above the transitive version, which has published security advisories. -->
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
-    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.13" />
-  </ItemGroup>
-
-  <!-- Classic reader (fallback, Classic\): Kuroukihime's AIon2-Dps-Meter (GPL-3.0). Goes with Classic\. -->
-  <ItemGroup>
-    <ProjectReference Include="..\external\AionDpsMeter\AionDpsMeter.Core\AionDpsMeter.Core.csproj" />
-    <ProjectReference Include="..\external\AionDpsMeter\AionDpsMeter.Services\AionDpsMeter.Services.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="Assets\Icons\*.svg" LogicalName="HamMeter.Icons.%(Filename)%(Extension)" />
-    <!-- Monster names and boss flags from A2Tools-DPS-Meter (taengu, GPL-3.0), see Game\Data\SOURCE.md. -->
+    <!-- Monster names and boss flags, see Game\Data\SOURCE.md. -->
     <EmbeddedResource Include="Game\Data\npcs.json" LogicalName="HamMeter.Npcs.json" />
     <!-- Patch notes for "What's new" and the key that update signatures are checked against. -->
     <EmbeddedResource Include="..\CHANGELOG.md" LogicalName="HamMeter.CHANGELOG.md" />

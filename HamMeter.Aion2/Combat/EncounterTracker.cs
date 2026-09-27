@@ -16,7 +16,7 @@ public readonly record struct PlayerRef(int Id, string Name, string Job, bool Is
 // Bosses (monster list) always get a fight of their own: the first hit on a boss closes
 // a running trash fight, and the fight ends as soon as its last boss dies.
 //
-// "ours" marks the user (and later the party). Only they start and keep fights going;
+// "ours" marks the user and the party. Only they start and keep fights going;
 // players who are merely nearby count only on enemies we fight as well.
 public sealed class EncounterTracker
 {
@@ -81,6 +81,13 @@ public sealed class EncounterTracker
         {
             if (!ours)
             {
+                // Someone nearby who is already in the fight, hit by one of our enemies
+                // (e.g. a tank the party list did not name).
+                if (m_current is { Active: true } fight && fight.Has(target.Id) && attackerId is int enemy && fight.IsOurTarget(enemy))
+                {
+                    fight.Get(target).DamageTaken += amount;
+                }
+
                 return;
             }
 

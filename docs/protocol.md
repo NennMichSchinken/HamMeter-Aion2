@@ -1,9 +1,8 @@
 # Aion 2 network protocol (HamMeter notes)
 
-This is HamMeter's own description of the Aion 2 game traffic, written as the basis
-for an independent capture and parser (see [independence plan](#independence-plan)).
-It records **facts about the protocol** — ports, framing, opcodes, field order — in our
-own words. Code is written from this document, not from other meters' sources.
+This is HamMeter's description of the Aion 2 game traffic: **facts about the
+protocol** — ports, framing, opcodes, field order — and how HamMeter uses them. HamMeter's
+capture and parsers are written from this document.
 
 Every section carries a status:
 
@@ -17,9 +16,9 @@ Every section carries a status:
 Verification means: record a session with *Settings → Record packets* (encrypted
 `.hmrec` files in `%APPDATA%\HamMeter-Aion2\PacketLogs`), replay it with
 `HamMeter.exe --replay <file.hmrec>` (writes `<file>.report.txt`: every fight, per-skill
-totals, opcode counts) and compare against what happened in game. With *Settings →
-Use HamMeter's own packet reader (beta)* the same per-skill totals go to `HamMeter.log`
-after every fight, for a direct comparison with the in-game meter.
+totals, party lists, opcode counts) and compare against what happened in game. The same
+per-skill totals go to `HamMeter.log` after every fight, for a direct comparison with the
+in-game meter.
 
 ---
 
@@ -202,10 +201,10 @@ Meaning:
 Effect types: damage `02`, `0A`; heal `01`, `09`, `0B`. Other values are not HP
 changes. (`0B` has the `02` bit set, so a bit test would misread HoTs as damage.)
 
-**Open:** possibly not every damage tick of a player skill should count — the classic
-reader only counts a curated list of DoT skill codes. HamMeter's own reader counts every
-player damage tick for now and logs ticks per skill (`tick`), so the totals can be
-compared with the in-game meter; skills that turn out wrong go on an exclusion list (§8).
+**Open:** possibly not every damage tick of a player skill counts in the in-game meter.
+HamMeter counts every player damage tick (solo it matched 1:1 so far) and logs ticks per
+skill (`tick`), so the totals can be compared with the in-game meter; skills that turn
+out wrong go on an exclusion list (§8).
 
 ### 5.3 `04 8D` — death
 
@@ -268,7 +267,8 @@ server id. Needs proper decoding.
 
 ### 6.3 `20 36` — entity ↔ character link
 
-**Status: observed**
+**Status: observed** — used by HamMeter to match entities to party members (§6.4);
+needs a group recording to confirm.
 
 | Field | Type |
 |---|---|
@@ -280,7 +280,9 @@ server id. Needs proper decoding.
 
 ### 6.4 `02 97` — party
 
-**Status: observed** — structured, the best-understood entity packet.
+**Status: observed** — structured, the best-understood entity packet. HamMeter reads it
+(`Game/PartyPacket.cs`): party members count like the user (they start fights, their
+damage taken and heals count), matched to entities by the link (§6.3) or by name.
 
 Header:
 
@@ -343,6 +345,16 @@ byte-sized fields in between, or in the next party member — continue in the sa
 or start a new byte is **not settled**. This decides whether every party member after
 the first is parsed correctly; check with a recording of a full party.
 
+Until then HamMeter reads `02 97` with three candidate packings and keeps the one that
+reads cleanly to the last byte (every member with a valid name, slot and level):
+
+- **Shared** — all bit fields of the packet share one byte until its 8 bits are used;
+- **PerRun** — consecutive bit fields share a byte, any other field ends it;
+- **PerBit** — every bit field is a byte of its own.
+
+`HamMeter.log` ("Party: … (bit packing …)") and the replay report ("Party lists") name
+the packing that matched, or print the packet when none did.
+
 ### 6.7 `41 36` — spawn (mobs and summons)
 
 **Status: heuristic** — the weakest part of the protocol knowledge.
@@ -364,7 +376,7 @@ healing belong to the owner.
 character name as u8 length + UTF-8 at byte 13 — a possible, more reliable way to find
 the owner than the pattern above.
 
-Proper decoding of this packet is a main task of the independence work.
+Proper decoding of this packet is one of the main open points.
 
 ### 6.8 `03 36` — server time
 
@@ -446,14 +458,13 @@ every healing class (§8). The skill log marks self-casts that are not a known h
 | Theostone range | rule in §7 | done |
 | Healing skill codes | starting list in `Game/SkillRules.cs`; confirm with own recordings | in progress |
 | DoT skill codes | every player tick counts; exclusions from comparisons with the in-game meter | in progress |
-| Monster names, bosses | monster list of A2Tools-DPS-Meter (taengu, GPL-3.0), `Game/Data/` | done |
+| Monster names, bosses | monster list in `Game/Data/` (see `SOURCE.md` there) | done |
 | Bosses not in the list | HamMeter rule on monster HP (needs a boss recording) | todo |
-| Class icons | own artwork | todo |
+| Class icons | official AION 2 class icons (NCSoft) | done |
 
 Static game data (skill and monster names, icons) belongs to NCSoft. The monster list is
-the one both other meters use (A2Tools' is the more complete one); it is taken under its
-GPL-3.0 license with credit, as a fixed copy — HamMeter does not depend on it at runtime
-from anywhere else. Everything else HamMeter builds from its own recordings.
+a fixed copy inside HamMeter; nothing is loaded at runtime. Everything else HamMeter
+builds from its own recordings.
 
 **Fights (like combat in WoW):** a fight lasts while enemies are engaged; its clock stops when the last one dies (`04 8D`) and the fight ends a few seconds later (setting, default 5 s) unless the next pull comes first. A DoT tick that lands right after a death must not re-engage the dead enemy — that bug let the clock run through the walking between packs (recording of 2026-09-24, 23:05). Without any death a fight ends after 30 s without damage.
 
@@ -463,24 +474,18 @@ Confirmed mob codes from recordings: 2100456 Red Cap Fungen, 2100041 Red Cap Fun
 2700914 Toblini (boss, sealed dungeon; the fight ended with its death), 2700915 Hideout
 Sura (its adds).
 
-**Players nearby:** once the user is known (§6.10), only the user starts and keeps fights
-going. Other players count only on enemies the user fights too — the same idea as the
-other meters' "target" views — so strangers in the open world stay out of the list.
+**Party and players nearby:** once the user is known (§6.10), only the user and the party
+(§6.4) start and keep fights going. Other players count only on enemies the user or the
+party fight too, so strangers in the open world stay out of the list. A player who is
+already in the fight also gets the damage taken from its enemies — a fallback for a tank
+the party list did not name.
 
 ---
 
-## Independence plan
+## Open points
 
-1. ✅ Inventory of what HamMeter uses from the AionDpsMeter submodule.
-2. ✅ This protocol description.
-3. ☐ Verify the *open* and *heuristic* points with own recordings.
-4. ✅ Own pipeline: capture (raw socket, Npcap incl. loopback), reassembly, framing,
-   LZ4, dispatch — `Capture/`, `Protocol/`. Selectable as a beta; classic stays default.
-5. ◐ Own entity packets and entity registry — own character, other players and summon
-   owners done (`Game/`); entity link (§6.3) and party (§6.4) need a group to test.
-6. ◐ Own game data (§8).
-7. ◐ Compare with the in-game meter — solo done (damage 1:1, self-heals, bosses in a
-   sealed dungeon); a group test on Global is still open.
-8. ◐ Own reader is the default (classic reader as a fallback). After the group test:
-   remove `Classic/`, the submodule, EF Core/SQLite, the `CombatTap` reflection hook and
-   Kuroukihime's line in `LICENSE`.
+1. Group test on Global: party list packing (§6.6), entity link (§6.3), heals on others,
+   damage taken by the tank.
+2. Bosses that are not in the monster list: a rule on monster HP (§8).
+3. The *heuristic* parts: spawn packet (§6.7), other players' server id (§6.2), name
+   back-references (§6.5).

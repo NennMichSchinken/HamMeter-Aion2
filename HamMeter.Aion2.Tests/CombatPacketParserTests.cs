@@ -337,7 +337,34 @@ public class CombatPacketParserTests
 
         public void U8(byte b) => m_bytes.Add(b);
 
+        public void U16(int v) => m_bytes.AddRange(BitConverter.GetBytes((ushort)v));
+
         public void U32(int v) => m_bytes.AddRange(BitConverter.GetBytes(v));
+
+        public void U64(ulong v) => m_bytes.AddRange(BitConverter.GetBytes(v));
+
+        // Single-bit field in one of the packings of docs/protocol.md §6.6.
+        public void Bit(bool value, PartyPacket.BitPacking packing)
+        {
+            bool fresh = packing == PartyPacket.BitPacking.PerBit || m_bitAt < 0 || m_bitsUsed >= 8
+                || (packing == PartyPacket.BitPacking.PerRun && m_bitAt != m_bytes.Count - 1);
+            if (fresh)
+            {
+                m_bytes.Add(0);
+                m_bitAt = m_bytes.Count - 1;
+                m_bitsUsed = 0;
+            }
+
+            if (value)
+            {
+                m_bytes[m_bitAt] |= (byte)(1 << m_bitsUsed);
+            }
+
+            m_bitsUsed++;
+        }
+
+        private int m_bitAt = -1;
+        private int m_bitsUsed;
 
         public void Bytes(int count) => m_bytes.AddRange(new byte[count]);
 

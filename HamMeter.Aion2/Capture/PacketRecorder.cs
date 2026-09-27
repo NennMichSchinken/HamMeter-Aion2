@@ -141,7 +141,7 @@ public sealed class PacketRecorder : IDisposable
         m_log.LogInformation("Packet recording stopped");
     }
 
-    // One framed game packet (IPacketEngine.PacketFramed).
+    // One framed game packet (PacketEngine.PacketFramed).
     public void Record(long unixMs, byte[] payload)
     {
         lock (m_sync)

@@ -7,7 +7,8 @@ Format (read by HamMeter's "What's new" and the update popup, keep it this way):
 - Each line is `- New: ...`, `- Improved: ...` or `- Fixed: ...`.
 
 ## 0.3.0
-- New: HamMeter reads the game with its own packet reader; the old one stays as a fallback under Data & App.
+- New: HamMeter reads the game with its own packet reader.
+- New: Group play: your party counts on every enemy of the group, with the tank's damage taken and heals between party members.
 - New: Fights like combat in WoW: every pack is its own fight and walking between packs no longer lowers your DPS.
 - New: Boss fights get a fight of their own, end with the boss's death and carry a crown in the history.
 - New: Fights are named after the boss or the main target.

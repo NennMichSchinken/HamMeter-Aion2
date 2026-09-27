@@ -59,13 +59,6 @@ public class Config
     // --- Testing ---
     public bool TestMode = false;
 
-    // HamMeter's own packet reader; false = the classic one as a fallback (restart needed).
-    public bool OwnPacketReader = true;
-
-    // The reader this run actually uses (set at start, shown in the settings).
-    [JsonIgnore]
-    public string ActiveReader = string.Empty;
-
     // --- Updates ---
     // null = not chosen here yet: the installer's choice applies (default: on).
     public bool? CheckForUpdates = null;
@@ -132,12 +125,6 @@ public class Config
                     this.JobColors[job] = now[job];
                 }
             }
-        }
-
-        // v5: HamMeter's own reader became the default. Before, false was just the default.
-        if (this.Version < 5)
-        {
-            this.OwnPacketReader = true;
         }
 
         this.Version = CurrentVersion;

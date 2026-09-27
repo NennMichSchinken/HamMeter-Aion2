@@ -312,9 +312,9 @@ public sealed class CombatPacketParser
         return m_entities.Player(entityId) is { } p ? ToRef(p) : null;
     }
 
-    // The user (and, later, the party) versus players who only happen to be nearby. Until
-    // the user is known every player counts.
-    private bool IsOurs(PlayerRef p) => !m_entities.UserKnown || p.IsUser;
+    // The user and the party versus players who only happen to be nearby. Until the user
+    // is known every player counts.
+    private bool IsOurs(PlayerRef p) => !m_entities.UserKnown || p.IsUser || m_entities.InParty(p.Id);
 
     private static PlayerRef ToRef(KnownPlayer p)
     {
