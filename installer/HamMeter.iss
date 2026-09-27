@@ -46,6 +46,20 @@ Name: "startmenu"; Description: "Start menu entry"
 Name: "desktop"; Description: "Desktop shortcut"; Flags: unchecked
 Name: "firewall"; Description: "Firewall rule (capture without Npcap)"; Flags: unchecked
 
+[InstallDelete]
+; Left behind by 0.1.x / 0.2.x (the packet reader HamMeter used before its own): an update
+; only overwrites files, it does not remove the ones the new version no longer ships.
+Type: files; Name: "{app}\AionDpsMeter.*.dll"
+Type: files; Name: "{app}\Microsoft.Data.Sqlite.dll"
+Type: files; Name: "{app}\Microsoft.EntityFrameworkCore*.dll"
+Type: files; Name: "{app}\Microsoft.Extensions.Caching.*.dll"
+Type: files; Name: "{app}\Microsoft.Extensions.Configuration.Abstractions.dll"
+Type: files; Name: "{app}\Microsoft.Extensions.DependencyModel.dll"
+Type: files; Name: "{app}\SQLitePCLRaw.*.dll"
+Type: files; Name: "{app}\e_sqlite3.dll"
+Type: filesandordirs; Name: "{app}\GameData"
+Type: filesandordirs; Name: "{app}\Assets\Classes"
+
 [Files]
 Source: "{#AppDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 

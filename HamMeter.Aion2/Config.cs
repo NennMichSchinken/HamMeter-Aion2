@@ -6,13 +6,16 @@ namespace HamMeter;
 
 public class Config
 {
-    public int Version { get; set; } = 1;
+    public const int CurrentVersion = 5;
+
+    public int Version { get; set; } = CurrentVersion;
 
     // --- Display ---
     public bool OnlyInCombat = false;
     public bool ConfirmReset = true;
     public bool Locked = false;
-    public float CombatTimeout = 10f;
+    public float FightEnd = 5f;        // seconds after the last enemy died
+    public float CombatTimeout = 30f;  // safety: seconds without any damage
     public float BackgroundOpacity = 0.8f;
     public Vector4 BackgroundColor = new(0.086f, 0.086f, 0.102f, 1f); // #16161A (settings window bg)
 
@@ -94,8 +97,37 @@ public class Config
             config = new Config();
         }
 
+        config.Migrate();
         config.EnsureJobColors();
         return config;
+    }
+
+    internal void Migrate()
+    {
+        // v2: the combat timeout default went from 10 to 30 s (fights no longer split
+        // while walking to the next mob). Only the old default is moved along.
+        if (this.Version < 2 && Math.Abs(this.CombatTimeout - 10f) < 0.01f)
+        {
+            this.CombatTimeout = 30f;
+        }
+
+        // v3/v4: class colours follow the official class icons (v4: at 90 %). Colours the
+        // user changed stay.
+        if (this.Version < 4)
+        {
+            Dictionary<string, Vector4> now = ClassInfo.DefaultColors();
+            foreach (string job in this.JobColors.Keys.ToList())
+            {
+                bool untouched = ClassInfo.PreviousDefaultColors().Any(old =>
+                    old.TryGetValue(job, out Vector4 o) && Vector4.DistanceSquared(this.JobColors[job], o) < 1e-5f);
+                if (untouched && now.ContainsKey(job))
+                {
+                    this.JobColors[job] = now[job];
+                }
+            }
+        }
+
+        this.Version = CurrentVersion;
     }
 
     public void EnsureJobColors()

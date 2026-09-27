@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using System.Net;
 using System.Security.Cryptography;
-using AionDpsMeter.Services.PacketCapture;
 using HamMeter.Capture;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -16,12 +15,12 @@ public class RawSocketFilterTests
     private const ushort LocalPort = 50123;
     private const ushort ServerPort = 7777;
 
-    private readonly RawSocketCaptureDevice m_device = new(
-        new TcpStreamBuffer(NullLogger<TcpStreamBuffer>.Instance),
-        NullLogger<RawSocketCaptureDevice>.Instance);
+    private readonly RecordingSink m_sink = new();
+    private readonly RawSocketCaptureDevice m_device;
 
     public RawSocketFilterTests()
     {
+        m_device = new RawSocketCaptureDevice(m_sink, NullLogger<RawSocketCaptureDevice>.Instance);
         m_device.SetAllowed([new TcpConnection(Local, LocalPort, Server, ServerPort)]);
     }
 
@@ -91,6 +90,22 @@ public class RawSocketFilterTests
         }
 
         Assert.NotNull(m_device.DeviceName);
+        Assert.Empty(m_sink.Payloads); // keep-alives only validate, they are not passed on
+    }
+
+    [Fact]
+    public void ValidatedStream_PassesPayloadOnInOrder_AndSkipsRetransmissions()
+    {
+        for (int i = 0; i < 5; i++)
+        {
+            m_device.HandleDatagram(Ip(Server, ServerPort, Local, LocalPort, [0x0B, 0x0E, 0x00, 0x36, 0, 0], seq: (uint)(i * 6)));
+        }
+
+        m_device.HandleDatagram(Ip(Server, ServerPort, Local, LocalPort, [1, 2, 3], seq: 1000));
+        m_device.HandleDatagram(Ip(Server, ServerPort, Local, LocalPort, [4, 5], seq: 1003));
+        m_device.HandleDatagram(Ip(Server, ServerPort, Local, LocalPort, [1, 2, 3], seq: 1000)); // retransmission
+
+        Assert.Equal([[1, 2, 3], [4, 5]], m_sink.Payloads);
     }
 
     private static uint Addr(string ip) => BitConverter.ToUInt32(IPAddress.Parse(ip).GetAddressBytes());
@@ -116,14 +131,22 @@ public class RawSocketFilterTests
     }
 }
 
+internal sealed class RecordingSink : IStreamSink
+{
+    public List<byte[]> Payloads { get; } = new();
+
+    public void AddData(string streamKey, byte[] payload, long receivedAtUnixMs) => this.Payloads.Add(payload);
+
+    public void ClearStream(string streamKey)
+    {
+    }
+}
+
 public sealed class PacketRecorderTests : IDisposable
 {
     private readonly string m_dir = Path.Combine(Path.GetTempPath(), "HamMeterTests_" + Guid.NewGuid().ToString("N"));
 
-    private PacketRecorder NewRecorder() => new(
-        new TcpStreamBuffer(NullLogger<TcpStreamBuffer>.Instance),
-        NullLogger<PacketRecorder>.Instance,
-        m_dir);
+    private PacketRecorder NewRecorder() => new(NullLogger<PacketRecorder>.Instance, m_dir);
 
     [Fact]
     public void Recording_RoundTrips_AndIsNotPlaintext()

@@ -116,7 +116,8 @@ public sealed class HamMeterOverlay : Overlay
             }
         }
 
-        m_tracker.CombatTimeoutSeconds = m_config.CombatTimeout;
+        m_tracker.FightEndSeconds = m_config.FightEnd;
+        m_tracker.IdleTimeoutSeconds = Math.Max(m_config.CombatTimeout, m_config.FightEnd);
         m_tracker.Tick(DateTime.Now);
 
         m_settings.Draw();
@@ -131,10 +132,15 @@ public sealed class HamMeterOverlay : Overlay
     }
 
     // Bar textures are embedded resources (Assets/Bars), uploaded to the GPU on first use.
-    private IntPtr BarTexture(string file)
+    private IntPtr BarTexture(string file) => this.EmbeddedTexture("HamMeter.Bars." + file);
+
+    // Class icons are embedded too (Assets/Classes); IntPtr.Zero falls back to the text tag.
+    private IntPtr ClassIcon(string job) =>
+        ClassInfo.IconResource(job) is { } resource ? this.EmbeddedTexture(resource) : IntPtr.Zero;
+
+    private IntPtr EmbeddedTexture(string resource)
     {
-        string key = "bar:" + file;
-        if (m_icons.TryGetValue(key, out IntPtr handle))
+        if (m_icons.TryGetValue(resource, out IntPtr handle))
         {
             return handle;
         }
@@ -142,44 +148,19 @@ public sealed class HamMeterOverlay : Overlay
         handle = IntPtr.Zero;
         try
         {
-            using Stream? s = typeof(HamMeterOverlay).Assembly.GetManifestResourceStream("HamMeter.Bars." + file);
+            using Stream? s = typeof(HamMeterOverlay).Assembly.GetManifestResourceStream(resource);
             if (s is not null)
             {
                 using var image = SixLabors.ImageSharp.Image.Load<SixLabors.ImageSharp.PixelFormats.Rgba32>(s);
-                this.AddOrGetImagePointer(key, image, false, out handle);
+                this.AddOrGetImagePointer(resource, image, false, out handle);
             }
         }
         catch (Exception)
         {
-            handle = IntPtr.Zero; // drawn flat instead
+            handle = IntPtr.Zero;
         }
 
-        m_icons[key] = handle;
-        return handle;
-    }
-
-    private IntPtr ClassIcon(string job)
-    {
-        if (m_icons.TryGetValue(job, out IntPtr handle))
-        {
-            return handle;
-        }
-
-        handle = IntPtr.Zero;
-        string? path = ClassInfo.IconPath(job);
-        if (path is not null && File.Exists(path))
-        {
-            try
-            {
-                this.AddOrGetImagePointer(path, false, out handle, out _, out _);
-            }
-            catch (Exception)
-            {
-                handle = IntPtr.Zero;
-            }
-        }
-
-        m_icons[job] = handle;
+        m_icons[resource] = handle;
         return handle;
     }
 

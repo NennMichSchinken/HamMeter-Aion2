@@ -1,8 +1,6 @@
-using System.Buffers.Binary;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Principal;
-using AionDpsMeter.Services.PacketCapture;
 using Microsoft.Extensions.Logging;
 
 namespace HamMeter.Capture;
@@ -13,72 +11,49 @@ namespace HamMeter.Capture;
 // as possible:
 //   - RCVALL_IPLEVEL, not RCVALL_ON: the network card is NOT put into promiscuous
 //     mode; only packets addressed to this PC are seen.
-//   - Before any payload byte is read, a packet must match an established TCP
-//     connection owned by Aion2.exe exactly (remote ip:port -> local ip:port).
-//     Everything else is dropped after the IP/TCP header checks.
-//   - Every header length is bounds-checked; fragments and non-IPv4 are dropped.
-//   - A connection only feeds the parser after Aion's heartbeat has been seen on it
-//     several times (same rule as Kuroukihime's CaptureDevice).
-// Server -> client traffic is all a damage meter needs, which is what raw sockets
-// deliver reliably.
-public sealed class RawSocketCaptureDevice : IPacketCaptureDevice
+//   - TcpReassembler drops everything that is not Aion's own connection before any
+//     payload byte is read.
+// Raw sockets never see loopback traffic, so VPN/booster tunnels need Npcap.
+public sealed class RawSocketCaptureDevice : IGameCapture
 {
     private const int SioRcvall = unchecked((int)0x98000001);
     private const int RcvallIpLevel = 3;
     private const int RefreshMs = 2000;
-    private const int HeartbeatThreshold = 5;
     private const int ReceiveBufferBytes = 4 * 1024 * 1024;
     private const int MaxDatagram = 65535;
 
-    private static readonly byte[] Heartbeat = { 0x0E, 0x00, 0x36 };
-
-    private readonly TcpStreamBuffer m_streamBuffer;
+    private readonly TcpReassembler m_reassembler;
     private readonly ILogger<RawSocketCaptureDevice> m_log;
     private readonly Lock m_sync = new();
     private readonly Dictionary<uint, Socket> m_sockets = new();
-    private readonly Dictionary<TcpConnection, StreamState> m_streams = new();
 
-    private volatile HashSet<TcpConnection> m_allowed = new();
     private Timer? m_refresh;
     private volatile bool m_capturing;
-    private long m_matchedPackets;
     private DateTime m_connectionsSince = DateTime.MaxValue;
 
-    public RawSocketCaptureDevice(TcpStreamBuffer streamBuffer, ILogger<RawSocketCaptureDevice> log)
+    public RawSocketCaptureDevice(IStreamSink sink, ILogger<RawSocketCaptureDevice> log)
     {
-        m_streamBuffer = streamBuffer;
+        m_reassembler = new TcpReassembler(sink, log, "Raw");
         m_log = log;
     }
 
     public bool IsCapturing => m_capturing;
 
-    public string? DeviceName
-    {
-        get
-        {
-            lock (m_sync)
-            {
-                return m_streams.Values.Any(s => s.Validated) ? "Raw socket" : null;
-            }
-        }
-    }
+    public string? DeviceName => m_reassembler.HasValidatedStream ? "Raw socket" : null;
 
     // A hint for the UI when Aion is connected but no packet of it ever arrived:
     // almost always the Windows Firewall dropping raw-socket traffic.
     public bool LooksBlocked =>
         m_capturing
-        && Interlocked.Read(ref m_matchedPackets) == 0
+        && m_reassembler.MatchedPackets == 0
         && (DateTime.Now - m_connectionsSince).TotalSeconds > 15;
+
+    internal long MatchedPackets => m_reassembler.MatchedPackets;
 
     public static bool IsElevated()
     {
         using WindowsIdentity id = WindowsIdentity.GetCurrent();
         return new WindowsPrincipal(id).IsInRole(WindowsBuiltInRole.Administrator);
-    }
-
-    public void DiscoverAdapters()
-    {
-        // Interfaces are chosen from Aion's own connections at runtime.
     }
 
     public void StartCapture()
@@ -117,13 +92,17 @@ public sealed class RawSocketCaptureDevice : IPacketCaptureDevice
             }
 
             m_sockets.Clear();
-            m_streams.Clear();
         }
 
+        m_reassembler.Clear();
         m_log.LogInformation("[RAW] Capture stopped");
     }
 
     public void Dispose() => this.StopCapture();
+
+    internal void SetAllowed(IEnumerable<TcpConnection> connections) => m_reassembler.SetAllowed(connections);
+
+    internal void HandleDatagram(ReadOnlySpan<byte> ip) => m_reassembler.HandleIpPacket(ip);
 
     // ----- Connection tracking --------------------------------------------------------
 
@@ -137,7 +116,7 @@ public sealed class RawSocketCaptureDevice : IPacketCaptureDevice
         List<TcpConnection> conns;
         try
         {
-            conns = GameConnections.Find();
+            conns = GameConnections.Find(includeLoopback: false);
         }
         catch (Exception ex)
         {
@@ -145,7 +124,7 @@ public sealed class RawSocketCaptureDevice : IPacketCaptureDevice
             return;
         }
 
-        this.SetAllowed(conns);
+        m_reassembler.SetAllowed(conns);
         if (conns.Count > 0 && m_connectionsSince == DateTime.MaxValue)
         {
             m_connectionsSince = DateTime.Now;
@@ -169,19 +148,8 @@ public sealed class RawSocketCaptureDevice : IPacketCaptureDevice
             {
                 this.OpenSocket(addr);
             }
-
-            foreach (TcpConnection gone in m_streams.Keys.Where(c => !m_allowed.Contains(c)).ToList())
-            {
-                m_streams.Remove(gone);
-                m_streamBuffer.ClearStream(StreamKey(gone));
-            }
         }
     }
-
-    internal void SetAllowed(IEnumerable<TcpConnection> connections) =>
-        m_allowed = new HashSet<TcpConnection>(connections);
-
-    internal long MatchedPackets => Interlocked.Read(ref m_matchedPackets);
 
     private void OpenSocket(uint localAddress)
     {
@@ -231,140 +199,12 @@ public sealed class RawSocketCaptureDevice : IPacketCaptureDevice
 
             try
             {
-                this.HandleDatagram(buffer.AsSpan(0, n));
+                m_reassembler.HandleIpPacket(buffer.AsSpan(0, n));
             }
             catch (Exception ex)
             {
                 m_log.LogDebug(ex, "[RAW] Dropped a malformed packet");
             }
         }
-    }
-
-    // ----- IPv4 / TCP ---------------------------------------------------------------------
-
-    internal void HandleDatagram(ReadOnlySpan<byte> ip)
-    {
-        if (ip.Length < 20 || (ip[0] >> 4) != 4)
-        {
-            return;
-        }
-
-        int ihl = (ip[0] & 0x0F) * 4;
-        int total = BinaryPrimitives.ReadUInt16BigEndian(ip[2..]);
-        if (ihl < 20 || total < ihl || total > ip.Length)
-        {
-            return;
-        }
-
-        // Drop fragments (more-fragments flag or a non-zero offset).
-        ushort fragment = BinaryPrimitives.ReadUInt16BigEndian(ip[6..]);
-        if ((fragment & 0x3FFF) != 0 || ip[9] != 6)
-        {
-            return;
-        }
-
-        // Addresses kept in network byte order, like the Windows TCP table.
-        uint source = BinaryPrimitives.ReadUInt32LittleEndian(ip[12..]);
-        uint destination = BinaryPrimitives.ReadUInt32LittleEndian(ip[16..]);
-
-        ReadOnlySpan<byte> tcp = ip[ihl..total];
-        if (tcp.Length < 20)
-        {
-            return;
-        }
-
-        ushort sourcePort = BinaryPrimitives.ReadUInt16BigEndian(tcp);
-        ushort destinationPort = BinaryPrimitives.ReadUInt16BigEndian(tcp[2..]);
-
-        // Server -> client only, and only Aion's own connections.
-        var conn = new TcpConnection(destination, destinationPort, source, sourcePort);
-        if (!m_allowed.Contains(conn))
-        {
-            return;
-        }
-
-        int dataOffset = (tcp[12] >> 4) * 4;
-        if (dataOffset < 20 || dataOffset > tcp.Length)
-        {
-            return;
-        }
-
-        Interlocked.Increment(ref m_matchedPackets);
-
-        byte flags = tcp[13];
-        uint seq = BinaryPrimitives.ReadUInt32BigEndian(tcp[4..]);
-        ReadOnlySpan<byte> payload = tcp[dataOffset..];
-
-        lock (m_sync)
-        {
-            this.HandleSegment(conn, seq, flags, payload);
-        }
-    }
-
-    // Same in-order handling as Kuroukihime's CaptureDevice: duplicates are skipped,
-    // gaps are logged and the stream continues from the new position.
-    private void HandleSegment(TcpConnection conn, uint seq, byte flags, ReadOnlySpan<byte> payload)
-    {
-        const byte Fin = 0x01;
-        const byte Syn = 0x02;
-        const byte Rst = 0x04;
-
-        string key = StreamKey(conn);
-        if ((flags & (Fin | Rst)) != 0)
-        {
-            m_streams.Remove(conn);
-            m_streamBuffer.ClearStream(key);
-            return;
-        }
-
-        if (!m_streams.TryGetValue(conn, out StreamState? state))
-        {
-            state = new StreamState();
-            m_streams[conn] = state;
-        }
-
-        if (!state.Validated)
-        {
-            if (payload.IndexOf(Heartbeat) >= 0 && ++state.Heartbeats >= HeartbeatThreshold)
-            {
-                state.Validated = true;
-                m_log.LogInformation("[RAW] Aion game stream detected");
-            }
-
-            return;
-        }
-
-        uint length = (uint)payload.Length + ((flags & Syn) != 0 ? 1u : 0u);
-        uint next = seq + length;
-
-        if (state.ExpectedSeq is uint expected)
-        {
-            // Serial-number arithmetic so wrap-around at 2^32 is handled.
-            int delta = (int)(seq - expected);
-            if (delta < 0 && (int)(next - expected) <= 0)
-            {
-                return; // duplicate / retransmission
-            }
-
-            if (delta > 0)
-            {
-                m_log.LogDebug("[RAW] TCP gap of {Bytes} bytes", delta);
-            }
-        }
-
-        state.ExpectedSeq = next;
-        if (payload.Length > 0)
-        {
-            m_streamBuffer.AddData(key, payload.ToArray(), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-        }
-    }
-
-    private static string StreamKey(TcpConnection c) => $"Raw:{c.RemotePort}:{c.LocalPort}";
-
-    private sealed class StreamState
-    {
-        public int Heartbeats;
-        public bool Validated;
-        public uint? ExpectedSeq;
     }
 }

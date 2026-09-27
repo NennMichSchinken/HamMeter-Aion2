@@ -68,14 +68,48 @@ public static class ClassInfo
 
     public static string FullName(string job) => Names.TryGetValue(job, out string? n) ? n : job;
 
-    public static string? IconPath(string job) =>
-        IconFiles.TryGetValue(job, out string? f)
-            ? Path.Combine(AppContext.BaseDirectory, "Assets", "Classes", f)
-            : null;
+    // Resource name of the official class icon (Assets/Classes, embedded).
+    public static string? IconResource(string job) =>
+        IconFiles.TryGetValue(job, out string? f) ? "HamMeter.Classes." + f : null;
 
     private static Vector4 Rgb(int r, int g, int b) => new(r / 255f, g / 255f, b / 255f, 1f);
 
+    // The game's own class colours (the main colour of each official icon) at 90 %
+    // brightness, so the icon stands out on its bar and white text stays readable.
     public static Dictionary<string, Vector4> DefaultColors() => new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["TEM"] = Rgb(79, 109, 185),
+        ["CLR"] = Rgb(167, 134, 59),
+        ["CHN"] = Rgb(163, 113, 52),
+        ["GLA"] = Rgb(67, 132, 149),
+        ["ASN"] = Rgb(50, 122, 40),
+        ["BRW"] = Rgb(140, 32, 36),
+        ["RNG"] = Rgb(42, 114, 84),
+        ["SOR"] = Rgb(112, 67, 173),
+        ["ELE"] = Rgb(144, 53, 145),
+    };
+
+    // Earlier defaults. Colours still equal to one of them were never changed by the user
+    // and move to the current defaults (Config.Migrate).
+    public static IEnumerable<Dictionary<string, Vector4>> PreviousDefaultColors() =>
+        [DefaultColorsV2(), DefaultColorsV3()];
+
+    // v3: the icon colours at 80 %.
+    private static Dictionary<string, Vector4> DefaultColorsV3() => new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["TEM"] = Rgb(70, 97, 165),
+        ["CLR"] = Rgb(148, 119, 53),
+        ["CHN"] = Rgb(145, 100, 46),
+        ["GLA"] = Rgb(59, 118, 132),
+        ["ASN"] = Rgb(44, 109, 35),
+        ["BRW"] = Rgb(125, 29, 32),
+        ["RNG"] = Rgb(38, 102, 74),
+        ["SOR"] = Rgb(99, 59, 154),
+        ["ELE"] = Rgb(128, 47, 129),
+    };
+
+    // Before v3: HamMeter's own colours, from before the official class icons.
+    public static Dictionary<string, Vector4> DefaultColorsV2() => new(StringComparer.OrdinalIgnoreCase)
     {
         ["TEM"] = Rgb(150, 190, 230),
         ["CLR"] = Rgb(250, 245, 225),

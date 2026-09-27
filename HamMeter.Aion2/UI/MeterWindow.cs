@@ -414,7 +414,8 @@ public sealed class MeterWindow
         float boxBottom = pos.Y + barH - 2f;
         float boxH = boxBottom - boxTop;
 
-        // Icon mode: try the class icon, fall back to the text tag if it isn't loaded.
+        // Icon mode: the official class icon as it is, falls back to the text tag if it
+        // isn't loaded.
         if (m_config.JobIndicator == 2)
         {
             IntPtr icon = m_classIcon(job);
@@ -564,12 +565,24 @@ public sealed class MeterWindow
             if (past.Count > 0)
             {
                 ImGui.Separator();
+
+                // Boss fights get a crown in front; the column stays for all entries so
+                // the titles line up.
+                float line = ImGui.GetTextLineHeight();
+                string gap = new(' ', (int)MathF.Ceiling((line + 6f) / MathF.Max(1f, ImGui.CalcTextSize(" ").X)));
+                ImDrawListPtr pdl = ImGui.GetWindowDrawList();
                 for (int i = past.Count - 1; i >= 0; i--)
                 {
-                    string label = $"{past[i].Title} ({past[i].Duration})##{i}";
+                    Vector2 at = ImGui.GetCursorScreenPos();
+                    string label = $"{gap}{past[i].Title} ({past[i].Duration})##{i}";
                     if (ImGui.Selectable(label, m_view == i))
                     {
                         m_view = i;
+                    }
+
+                    if (past[i].IsBoss)
+                    {
+                        Icons.Draw(pdl, Icon.Crown, at, line, Col(new Vector4(0.95f, 0.76f, 0.30f, 1f)));
                     }
                 }
             }
