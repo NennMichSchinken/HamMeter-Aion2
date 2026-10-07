@@ -13,6 +13,7 @@ public sealed class EntityRegistry : IEntityDirectory
     private readonly Dictionary<int, uint> m_characterIds = new();
     private Dictionary<uint, string> m_party = new();
     private string? m_userName;
+    private bool? m_partyIncomplete; // cached; names, links and the party reset it
 
     public event Action<int, int>? SummonRegistered;
 
@@ -40,11 +41,13 @@ public sealed class EntityRegistry : IEntityDirectory
         }
 
         e.IsUser = name == m_userName || entityId == this.UserId;
+        m_partyIncomplete = null;
     }
 
     // The user's entity, known before (or without) a name packet.
     public void SetUser(int entityId)
     {
+        m_partyIncomplete = null;
         if (this.UserId is int old && old != entityId && m_players.TryGetValue(old, out Entry? previous))
         {
             previous.IsUser = false;
@@ -78,6 +81,7 @@ public sealed class EntityRegistry : IEntityDirectory
     public void SetParty(IReadOnlyList<PartyMember> members)
     {
         m_party = members.GroupBy(m => m.CharacterId).ToDictionary(g => g.Key, g => g.First().Name);
+        m_partyIncomplete = null;
         foreach ((int entityId, uint characterId) in m_characterIds)
         {
             this.NameFromParty(entityId, characterId);
@@ -93,6 +97,7 @@ public sealed class EntityRegistry : IEntityDirectory
         }
 
         m_characterIds[entityId] = characterId;
+        m_partyIncomplete = null;
         this.NameFromParty(entityId, characterId);
     }
 
@@ -132,6 +137,30 @@ public sealed class EntityRegistry : IEntityDirectory
     public string TargetName(int entityId) => this.Npc(entityId)?.Name ?? string.Empty;
 
     public bool IsBoss(int entityId) => this.Npc(entityId)?.IsBoss == true;
+
+    // Spawned as a monster from the monster list. That beats a player entry for the same id
+    // (an id reused after a zone change, or a monster that used a player-like skill code);
+    // only the user and the party stay players whatever an old mob code says.
+    public bool IsMonster(int entityId) =>
+        this.Npc(entityId) is not null && entityId != this.UserId && !this.InParty(entityId);
+
+    // Whether party members are still unaccounted for: fewer players tied to one (by link
+    // or name) than the party has besides the user. Names come with the packet of a player
+    // appearing, so after HamMeter starts inside a dungeon some never do (2026-10-07).
+    public bool PartyIncomplete => m_partyIncomplete ??= this.CountPartyIncomplete();
+
+    private bool CountPartyIncomplete()
+    {
+        if (m_party.Count <= 1)
+        {
+            return false;
+        }
+
+        HashSet<uint> linked = m_characterIds.Where(kv => kv.Key != this.UserId).Select(kv => kv.Value).ToHashSet();
+        HashSet<string> named = m_players.Values.Where(e => !e.IsUser && e.Name is not null).Select(e => e.Name!).ToHashSet();
+        int found = m_party.Count(kv => kv.Value != m_userName && (linked.Contains(kv.Key) || named.Contains(kv.Value)));
+        return found < m_party.Count - 1;
+    }
 
     // By the character link, or by name when the link packet was missed (§4).
     public bool InParty(int entityId) =>

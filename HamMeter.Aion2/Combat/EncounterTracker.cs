@@ -10,20 +10,37 @@ public readonly record struct PlayerRef(int Id, string Name, string Job, bool Is
 // Like combat in WoW: a fight lasts while enemies are engaged (hit by us or hitting us).
 // Its clock pauses the moment the last of them dies, and the fight ends
 // FightEndSeconds later unless the next pull comes first, so every pack is a fight of its
-// own and walking never counts as fight time. As a safety net for a missing death, a
-// fight also ends after IdleTimeoutSeconds without any damage.
+// own and walking never counts as fight time. An enemy nobody fought for QuietSeconds
+// leaves the fight as if it died (adds that explode or despawn send no death). As a
+// safety net, a fight also ends after IdleTimeoutSeconds without any damage.
 //
 // Bosses (monster list) always get a fight of their own: the first hit on a boss closes
 // a running trash fight, and the fight ends as soon as its last boss dies.
 //
-// "ours" marks the user and the party. Only they start and keep fights going;
-// players who are merely nearby count only on enemies we fight as well.
+// Only the user and the party are passed in (the parser drops everyone else), so players
+// who are merely nearby never show up. "sure = false" marks a player who may be one of
+// ours (no name yet while party members are unaccounted for): they count only on enemies
+// of the running fight and never start a fight of their own.
+//
+// A dead enemy stays dead: its damage-over-time ticks (ours on it, its own on us) still
+// count, but never bring it back into the fight and never start a fight of their own.
+// A direct hit long after the death means a new monster got the same entity id.
 public sealed class EncounterTracker
 {
     private const int MaxHistory = 50;
 
+    // A direct hit this soon after the death is a straggler, later it is a new monster.
+    private const double RecentlyDeadSeconds = 10;
+
+    // How long a death is remembered (longer than any damage-over-time lasts).
+    private const double DeadMemorySeconds = 120;
+
+    // Seconds without any hit on or from an enemy before it leaves the fight. Bosses stay.
+    private const double QuietSeconds = 10;
+
     private readonly Lock m_sync = new();
     private readonly List<EncounterSnapshot> m_past = new();
+    private readonly Dictionary<int, DateTime> m_dead = new();
 
     private Encounter? m_current;
     private EncounterSnapshot? m_lastFinished;
@@ -36,25 +53,32 @@ public sealed class EncounterTracker
     // Seconds without any damage (dealt or taken) before a fight ends regardless.
     public double IdleTimeoutSeconds { get; set; } = 30;
 
-    public void DamageDone(DateTime time, PlayerRef source, long amount, int targetId, string targetName, bool targetIsBoss = false, bool ours = true)
+    // tick: a damage-over-time tick (05 38) rather than a direct hit.
+    public void DamageDone(DateTime time, PlayerRef source, long amount, int targetId, string targetName, bool targetIsBoss = false, bool tick = false, bool sure = true)
     {
         EncounterSnapshot? finished = null;
         lock (m_sync)
         {
-            if (!ours)
+            if (!sure)
             {
-                // Someone nearby: only on an enemy of the running fight.
-                if (m_current is { Active: true } fight && fight.IsOurTarget(targetId))
+                if (m_current is { Active: true } fight && fight.IsEnemy(targetId))
                 {
                     fight.Get(source).Damage += amount;
                     fight.AddTargetDamage(targetId, targetName, amount);
+                    fight.Touch(targetId, time);
                 }
 
                 return;
             }
 
+            bool dead = this.IsDead(targetId, time, tick);
+            if (dead && m_current is not { Active: true })
+            {
+                return;
+            }
+
             // Walking from the trash to the boss must not merge the two fights.
-            if (targetIsBoss && m_current is { Active: true, HasBoss: false } trash)
+            if (targetIsBoss && !dead && m_current is { Active: true, HasBoss: false } trash)
             {
                 finished = this.Finish(trash);
                 m_current = null;
@@ -63,11 +87,13 @@ public sealed class EncounterTracker
             Encounter enc = this.BeginOrContinue(time);
             enc.Get(source).Damage += amount;
             enc.AddTargetDamage(targetId, targetName, amount);
-            enc.Engage(targetId, time);
-            enc.AddOurTarget(targetId);
-            if (targetIsBoss)
+            if (!dead)
             {
-                enc.AddBoss(targetId);
+                enc.Engage(targetId, time);
+                if (targetIsBoss)
+                {
+                    enc.AddBoss(targetId);
+                }
             }
         }
 
@@ -75,31 +101,57 @@ public sealed class EncounterTracker
     }
 
     // attackerId: the enemy that hit, when known (keeps the clock running while it lives).
-    public void DamageTaken(DateTime time, PlayerRef target, long amount, int? attackerId = null, bool ours = true)
+    public void DamageTaken(DateTime time, PlayerRef target, long amount, int? attackerId = null, bool tick = false, bool sure = true)
     {
         lock (m_sync)
         {
-            if (!ours)
+            if (!sure)
             {
-                // Someone nearby who is already in the fight, hit by one of our enemies
-                // (e.g. a tank the party list did not name).
-                if (m_current is { Active: true } fight && fight.Has(target.Id) && attackerId is int enemy && fight.IsOurTarget(enemy))
+                if (m_current is { Active: true } fight && attackerId is int enemy && fight.IsEnemy(enemy))
                 {
                     fight.Get(target).DamageTaken += amount;
+                    fight.Touch(enemy, time);
                 }
 
                 return;
             }
 
-            Encounter enc = this.BeginOrContinue(time);
-            if (attackerId is int attacker)
+            bool dead = attackerId is int attacker && this.IsDead(attacker, time, tick);
+            if (dead && m_current is not { Active: true })
             {
-                enc.AddOurTarget(attacker);
+                return;
             }
 
+            Encounter enc = this.BeginOrContinue(time);
             enc.Get(target).DamageTaken += amount;
-            enc.Engage(attackerId, time);
+            if (!dead)
+            {
+                enc.Engage(attackerId, time);
+            }
         }
+    }
+
+    // Whether an action on or by this enemy comes after its death: any tick, or a direct
+    // hit right after it. A direct hit later on is a new monster with the same id.
+    private bool IsDead(int enemyId, DateTime time, bool tick)
+    {
+        if (!m_dead.TryGetValue(enemyId, out DateTime died))
+        {
+            return false;
+        }
+
+        double since = (time - died).TotalSeconds;
+        if (since < RecentlyDeadSeconds || (tick && since < DeadMemorySeconds))
+        {
+            return true;
+        }
+
+        if (!tick)
+        {
+            m_dead.Remove(enemyId);
+        }
+
+        return false;
     }
 
     // A non-player entity died. When it was the last engaged enemy the clock pauses; when
@@ -109,6 +161,15 @@ public sealed class EncounterTracker
         EncounterSnapshot? finished = null;
         lock (m_sync)
         {
+            if (m_dead.Count >= 512)
+            {
+                foreach (int old in m_dead.Where(d => (time - d.Value).TotalSeconds >= DeadMemorySeconds).Select(d => d.Key).ToList())
+                {
+                    m_dead.Remove(old);
+                }
+            }
+
+            m_dead[entityId] = time;
             if (m_current is { Active: true } enc)
             {
                 enc.Disengage(entityId, time);
@@ -122,41 +183,39 @@ public sealed class EncounterTracker
         this.Raise(finished);
     }
 
-    // Healing never starts a fight on its own (regen and top-ups between pulls). Players
-    // nearby only show up when they heal us, or were already in the fight.
-    public void Healing(DateTime time, PlayerRef healer, PlayerRef? target, long amount, bool healerOurs = true, bool targetOurs = true)
+    // Healing never starts a fight on its own (regen and top-ups between pulls). healer and
+    // target are null when they are not one of ours: a stranger's heal on us still counts
+    // as healing taken, without the stranger showing up. Someone only maybe ours counts
+    // once they are in the fight.
+    public void Healing(DateTime time, PlayerRef? healer, PlayerRef? target, long amount, bool healerSure = true, bool targetSure = true)
     {
         lock (m_sync)
         {
-            if (m_current is not { Active: true } enc || (!healerOurs && !targetOurs))
+            if (m_current is not { Active: true } enc)
             {
-                if (m_current is { Active: true } fight && fight.Has(healer.Id) && target is { } known && fight.Has(known.Id))
-                {
-                    fight.Get(healer).Healed += amount;
-                    fight.Get(known).HealingTaken += amount;
-                }
-
                 return;
             }
 
-            enc.Get(healer).Healed += amount;
-            if (target is { } t && (targetOurs || enc.Has(t.Id)))
+            if (healer is { } h && (healerSure || enc.Has(h.Id)))
+            {
+                enc.Get(h).Healed += amount;
+            }
+
+            if (target is { } t && (targetSure || enc.Has(t.Id)))
             {
                 enc.Get(t).HealingTaken += amount;
             }
         }
     }
 
-    public void Death(DateTime time, PlayerRef player, bool ours = true)
+    public void Death(DateTime time, PlayerRef player, bool sure = true)
     {
         lock (m_sync)
         {
-            if (m_current is not { Active: true } enc || (!ours && !enc.Has(player.Id)))
+            if (m_current is { Active: true } enc && (sure || enc.Has(player.Id)))
             {
-                return;
+                enc.Get(player).Deaths++;
             }
-
-            enc.Get(player).Deaths++;
         }
     }
 
@@ -178,6 +237,7 @@ public sealed class EncounterTracker
         EncounterSnapshot? finished = null;
         lock (m_sync)
         {
+            m_current?.DropQuiet(now, QuietSeconds);
             if (m_current is { Active: true } enc
                 && ((enc.AllDeadSince is { } dead && (now - dead).TotalSeconds > this.FightEndSeconds)
                     || (now - enc.LastCombat).TotalSeconds > this.IdleTimeoutSeconds))
@@ -281,6 +341,7 @@ public sealed class EncounterTracker
             m_current = null;
             m_lastFinished = null;
             m_past.Clear();
+            m_dead.Clear();
             m_overall = null;
             m_overallCount = -1;
         }
@@ -329,7 +390,8 @@ public sealed class EncounterTracker
     {
         private readonly Dictionary<int, Totals> m_players = new();
         private readonly Dictionary<int, (string Name, long Damage)> m_targets = new();
-        private readonly HashSet<int> m_engaged = new();
+        private readonly Dictionary<int, DateTime> m_engaged = new(); // enemy -> last hit on or from it
+        private readonly HashSet<int> m_enemies = new();              // every enemy of this fight
         private readonly HashSet<int> m_bosses = new();
         private readonly HashSet<int> m_deadBosses = new();
         private double m_pausedSeconds;
@@ -340,14 +402,9 @@ public sealed class EncounterTracker
 
         public bool HasBoss => m_bosses.Count > 0;
 
-        public int[] EngagedIds() => m_engaged.ToArray();
+        public int[] EngagedIds() => m_engaged.Keys.ToArray();
 
-        // Enemies we hit or that hit us; nearby players only count on these.
-        private readonly HashSet<int> m_ourTargets = new();
-
-        public void AddOurTarget(int entityId) => m_ourTargets.Add(entityId);
-
-        public bool IsOurTarget(int entityId) => m_ourTargets.Contains(entityId);
+        public bool IsEnemy(int entityId) => m_enemies.Contains(entityId);
 
         public bool Has(int playerId) => m_players.ContainsKey(playerId);
 
@@ -372,19 +429,14 @@ public sealed class EncounterTracker
         // Set while every engaged enemy is dead: the fight ends a little later.
         public DateTime? AllDeadSince { get; private set; }
 
+        // The tracker never engages a dead enemy again: it would never die a second time and
+        // the clock would run on.
         public void Engage(int? enemyId, DateTime time)
         {
-            // A DoT tick that lands just after the death must not bring the enemy (and the
-            // clock) back: it would never die again and the clock would run on.
-            if (enemyId is int dead && m_dead.TryGetValue(dead, out DateTime died)
-                && (time - died).TotalSeconds < RecentlyDeadSeconds)
-            {
-                return;
-            }
-
             if (enemyId is int id)
             {
-                m_engaged.Add(id);
+                m_engaged[id] = m_engaged.TryGetValue(id, out DateTime last) && last > time ? last : time;
+                m_enemies.Add(id);
             }
 
             m_runningSince ??= time;
@@ -395,19 +447,54 @@ public sealed class EncounterTracker
             }
         }
 
+        // Someone who may be one of ours fights an engaged enemy: it is not quiet.
+        public void Touch(int enemyId, DateTime time)
+        {
+            if (m_engaged.ContainsKey(enemyId))
+            {
+                this.Engage(enemyId, time);
+            }
+        }
+
+        // Enemies nobody hit and that hit nobody for `seconds` leave the fight; when that was
+        // the last one, the clock stops at the last action and the fight ends.
+        public void DropQuiet(DateTime now, double seconds)
+        {
+            if (!this.Active || m_engaged.Count == 0)
+            {
+                return;
+            }
+
+            List<int>? quiet = null;
+            foreach ((int id, DateTime last) in m_engaged)
+            {
+                if ((now - last).TotalSeconds > seconds && !m_bosses.Contains(id))
+                {
+                    (quiet ??= new()).Add(id);
+                }
+            }
+
+            if (quiet is null)
+            {
+                return;
+            }
+
+            quiet.ForEach(id => m_engaged.Remove(id));
+            if (m_engaged.Count == 0)
+            {
+                this.Pause(this.LastCombat);
+                this.AllDeadSince = this.LastCombat;
+            }
+        }
+
         public void Disengage(int enemyId, DateTime time)
         {
-            m_dead[enemyId] = time;
             if (m_engaged.Remove(enemyId) && m_engaged.Count == 0)
             {
                 this.Pause(time);
                 this.AllDeadSince = time;
             }
         }
-
-        private const double RecentlyDeadSeconds = 10;
-
-        private readonly Dictionary<int, DateTime> m_dead = new();
 
         public void Pause(DateTime time)
         {

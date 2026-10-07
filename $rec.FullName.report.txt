@@ -1,0 +1,21 @@
+HamMeter replay of $rec.FullName
+
+Recording ends early: Could not find file 'E:\Github\HamMeter-Aion2\$rec.FullName'.
+
+Framed packets: 0
+Own character: not seen
+Fights: 0
+
+Party lists (02 97):
+
+Summons (41 36):
+
+Targets of the user (first hit | last hit | damage | death):
+
+Fight clock running while nobody hit anything:
+
+Non-players that hit the user (first | last | hits | damage | skill | death):
+
+Hits by the user on players:
+
+Opcodes (wire order: count):

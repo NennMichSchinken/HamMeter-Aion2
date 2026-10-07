@@ -8,8 +8,11 @@ namespace HamMeter.Capture;
 // Turns the combat packets into HamMeter events (docs/protocol.md §5):
 //   - damage done by players and their summons,
 //   - healing (heal skills on 04 38, heal/HoT effect types on 05 38),
-//   - damage taken (non-player actors hitting a known player),
-//   - deaths of every known player, and of monsters (they pause the fight clock).
+//   - damage taken (monsters hitting a player),
+//   - deaths of players, and of monsters (they pause the fight clock).
+// Only the user and the party reach the tracker; players nearby are dropped here. A player
+// without a name while party members are unaccounted for may be one of them and counts
+// on the fight's enemies.
 // Who is who comes from an IEntityDirectory, what skill codes mean from ISkillRules.
 public sealed class CombatPacketParser
 {
@@ -109,13 +112,8 @@ public sealed class CombatPacketParser
 
         if (source is null)
         {
-            // Not a player skill: an NPC (or unknown summon) hitting someone. If the
-            // target is a known player, that's damage taken.
-            if (actorId != targetId && this.ResolvePlayer(targetId) is { } victim)
-            {
-                m_tracker.DamageTaken(now, victim, amount, actorId, this.IsOurs(victim));
-            }
-
+            // Not a player skill: a monster hitting someone. On one of ours that's damage taken.
+            this.MonsterHit(now, actorId, targetId, amount, tick: false);
             return;
         }
 
@@ -123,7 +121,7 @@ public sealed class CombatPacketParser
         {
             // Self-casts (actor == target) are instant self-heals.
             PlayerRef? healed = actorId == targetId ? source : this.ResolvePlayer(targetId);
-            m_tracker.Healing(now, source.Value, healed, amount, this.IsOurs(source.Value), healed is { } h && this.IsOurs(h));
+            this.Heal(now, source.Value, healed, amount);
             this.SkillLog?.Add(source.Value, "heal", skillCode, amount);
             return;
         }
@@ -135,8 +133,55 @@ public sealed class CombatPacketParser
             return;
         }
 
-        m_tracker.DamageDone(now, source.Value, amount, targetId, m_entities.TargetName(targetId), m_entities.IsBoss(targetId), this.IsOurs(source.Value));
-        this.SkillLog?.Add(source.Value, "hit", skillCode, amount);
+        this.PlayerHit(now, source.Value, targetId, skillCode, amount, tick: false);
+    }
+
+    // Damage by a player skill. Only the user and the party count; there is no friendly
+    // fire, so an amount on one of ours is a heal or buff HamMeter does not know yet.
+    private void PlayerHit(DateTime now, PlayerRef source, int targetId, int skillCode, long amount, bool tick)
+    {
+        bool sure = this.IsOurs(source);
+        if (!sure && !this.MaybeOurs(source))
+        {
+            return;
+        }
+
+        if (this.ResolvePlayer(targetId) is { } ally && (this.IsOurs(ally) || this.MaybeOurs(ally)))
+        {
+            this.SkillLog?.Add(source, "ally?", skillCode, amount);
+            return;
+        }
+
+        m_tracker.DamageDone(now, source, amount, targetId, m_entities.TargetName(targetId), m_entities.IsBoss(targetId), tick, sure);
+        this.SkillLog?.Add(source, tick ? "tick" : "hit", skillCode, amount);
+    }
+
+    // An action without a player skill: damage taken when it lands on one of ours. A known
+    // player as the actor is a skill HamMeter does not know, not an enemy.
+    private void MonsterHit(DateTime now, int actorId, int targetId, long amount, bool tick)
+    {
+        if (actorId != targetId && this.ResolvePlayer(actorId) is null && this.ResolvePlayer(targetId) is { } victim)
+        {
+            bool sure = this.IsOurs(victim);
+            if (sure || this.MaybeOurs(victim))
+            {
+                m_tracker.DamageTaken(now, victim, amount, actorId, tick, sure);
+            }
+        }
+    }
+
+    // Healing done counts for ours, healing taken on ours, whoever healed.
+    private void Heal(DateTime now, PlayerRef healer, PlayerRef? healed, long amount)
+    {
+        bool healerSure = this.IsOurs(healer);
+        bool healedSure = healed is { } h && this.IsOurs(h);
+        m_tracker.Healing(
+            now,
+            healerSure || this.MaybeOurs(healer) ? healer : null,
+            healed is { } t && (healedSure || this.MaybeOurs(t)) ? t : null,
+            amount,
+            healerSure,
+            healedSure);
     }
 
     // Valid only if it fits a byte and the low nibble is 4-7.
@@ -188,7 +233,7 @@ public sealed class CombatPacketParser
             }
 
             PlayerRef? healed = actorId == targetId ? source : this.ResolvePlayer(targetId);
-            m_tracker.Healing(now, source.Value, healed, amount, this.IsOurs(source.Value), healed is { } h && this.IsOurs(h));
+            this.Heal(now, source.Value, healed, amount);
             this.SkillLog?.Add(source.Value, "hot", skillCode, amount);
             return;
         }
@@ -200,11 +245,7 @@ public sealed class CombatPacketParser
 
         if (source is null)
         {
-            if (this.ResolvePlayer(targetId) is { } victim)
-            {
-                m_tracker.DamageTaken(now, victim, amount, actorId, this.IsOurs(victim));
-            }
-
+            this.MonsterHit(now, actorId, targetId, amount, tick: true);
             return;
         }
 
@@ -214,8 +255,7 @@ public sealed class CombatPacketParser
             return;
         }
 
-        m_tracker.DamageDone(now, source.Value, amount, targetId, m_entities.TargetName(targetId), m_entities.IsBoss(targetId), this.IsOurs(source.Value));
-        this.SkillLog?.Add(source.Value, "tick", skillCode, amount);
+        this.PlayerHit(now, source.Value, targetId, skillCode, amount, tick: true);
     }
 
     // ----- 04 8D: death ---------------------------------------------------------------
@@ -225,15 +265,15 @@ public sealed class CombatPacketParser
         PacketReader reader = PacketReader.Body(packet);
         int entityId = (int)reader.ReadVarInt();
 
-        if (this.ResolvePlayer(entityId) is { } player)
+        if (this.ResolvePlayer(entityId) is { } player && (this.IsOurs(player) || this.MaybeOurs(player)))
         {
             m_tracker.Death(this.Clock(), player, this.IsOurs(player));
+            return;
         }
-        else if (m_entities.Player(entityId) is null && !m_entities.IsSummon(entityId))
-        {
-            // A monster: once the last engaged one is dead the fight clock pauses.
-            m_tracker.EnemyDied(this.Clock(), entityId);
-        }
+
+        // Anything else that dies is no enemy any more, whatever HamMeter took it for: once
+        // the last engaged one is dead the fight clock pauses (a no-op for the rest).
+        m_tracker.EnemyDied(this.Clock(), entityId);
     }
 
     // ----- Entity resolution ------------------------------------------------------------
@@ -242,12 +282,12 @@ public sealed class CombatPacketParser
     // encoded in the skill code decides whether the actor is a player at all.
     private PlayerRef? ResolveSource(int actorId, int skillCode)
     {
-        if (m_entities.SummonOwner(actorId) is int ownerId)
+        if (this.SummonPlayer(actorId) is { } owner)
         {
-            return this.ResolvePlayer(ownerId) ?? new PlayerRef(ownerId, $"Player_{ownerId}", string.Empty, false);
+            return owner;
         }
 
-        if (!IsPlayerSkillCode(skillCode))
+        if (m_entities.IsMonster(actorId) || !IsPlayerSkillCode(skillCode))
         {
             return null;
         }
@@ -304,7 +344,7 @@ public sealed class CombatPacketParser
 
     private PlayerRef? ResolvePlayer(int entityId)
     {
-        if (m_entities.IsSummon(entityId))
+        if (m_entities.IsSummon(entityId) || m_entities.IsMonster(entityId))
         {
             return null;
         }
@@ -312,9 +352,18 @@ public sealed class CombatPacketParser
         return m_entities.Player(entityId) is { } p ? ToRef(p) : null;
     }
 
-    // The user and the party versus players who only happen to be nearby. Until the user
-    // is known every player counts.
+    // The user and the party versus players who only happen to be nearby, who never count.
+    // Until the user is known every player counts.
     private bool IsOurs(PlayerRef p) => !m_entities.UserKnown || p.IsUser || m_entities.InParty(p.Id);
+
+    // A player HamMeter has no name for while party members are still unaccounted for: may
+    // be one of them. Started inside a dungeon, the party's name packets came before
+    // HamMeter did and two of four members went missing (replay of 2026-10-07). Strangers
+    // who come into view while HamMeter runs have names, and solo there is no party to miss.
+    private bool MaybeOurs(PlayerRef p) =>
+        !m_entities.IsSummon(p.Id) && !m_entities.IsMonster(p.Id)
+        && m_entities.Player(p.Id) is { Name: null, IsUser: false }
+        && m_entities.PartyIncomplete;
 
     private static PlayerRef ToRef(KnownPlayer p)
     {
@@ -322,9 +371,21 @@ public sealed class CombatPacketParser
         return new PlayerRef(p.Id, name, ClassInfo.KeyFromId(p.ClassId), p.IsUser);
     }
 
-    private void OnSummonRegistered(int summonId, int ownerId)
+    // The player behind a summon, or null when the entity is no summon. A summon's own
+    // summon belongs to the same player, so the chain is followed a few steps (no loops);
+    // stopping at the first owner showed such damage as a grey "Player_<id>" that was not
+    // in the party (dungeon, 2026-10-07).
+    private PlayerRef? SummonPlayer(int entityId)
     {
-        PlayerRef owner = this.ResolvePlayer(ownerId) ?? new PlayerRef(ownerId, $"Player_{ownerId}", string.Empty, false);
-        m_tracker.MergeSummon(summonId, owner);
+        int owner = entityId;
+        for (int i = 0; i < 4 && m_entities.SummonOwner(owner) is int next; i++)
+        {
+            owner = next;
+        }
+
+        return owner == entityId ? null : this.ResolvePlayer(owner) ?? new PlayerRef(owner, $"Player_{owner}", string.Empty, false);
     }
+
+    private void OnSummonRegistered(int summonId, int ownerId) =>
+        m_tracker.MergeSummon(summonId, this.SummonPlayer(summonId) ?? new PlayerRef(ownerId, $"Player_{ownerId}", string.Empty, false));
 }

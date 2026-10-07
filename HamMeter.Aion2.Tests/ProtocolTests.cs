@@ -160,7 +160,7 @@ public class ProtocolTests
     }
 
     [Fact]
-    public void UserState_IdentifiesTheUser_AndPlayersNearbyOnlyCountOnOurEnemies()
+    public void UserState_IdentifiesTheUser_AndPlayersNearbyNeverCount()
     {
         var tracker = new EncounterTracker();
         using PacketEngine engine = PacketEngine.Offline(tracker, NullLoggerFactory.Instance);
@@ -175,15 +175,14 @@ public class ProtocolTests
         Assert.Null(tracker.Current);
 
         engine.Stream.Dispatch(Hit(User, OurMob, 17_010_000, 1_000));
-        engine.Stream.Dispatch(Hit(Stranger, TheirMob, 11_020_000, 9_999)); // still not our enemy
-        engine.Stream.Dispatch(Hit(Stranger, OurMob, 11_020_000, 500));     // helps on ours: counts
+        engine.Stream.Dispatch(Hit(Stranger, OurMob, 11_020_000, 500));     // helps on ours: still not listed
+        engine.Stream.Dispatch(Hit(Stranger, User, 17_120_000, 300));       // heals us: healing taken only
 
-        var names = tracker.Current!.Combatants.ToDictionary(c => c.Id);
-        Assert.Equal(2, names.Count);
-        Assert.Equal("You", names[User].Name);  // no name packet yet
-        Assert.True(names[User].IsUser);
-        Assert.Equal(1_000, names[User].DamageTotal);
-        Assert.Equal(500, names[Stranger].DamageTotal);
+        Combatant you = Assert.Single(tracker.Current!.Combatants);
+        Assert.Equal("You", you.Name);  // no name packet yet
+        Assert.True(you.IsUser);
+        Assert.Equal(1_000, you.DamageTotal);
+        Assert.Equal(300, you.HealingTaken);
     }
 
     [Fact]

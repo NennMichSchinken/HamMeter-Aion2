@@ -48,7 +48,7 @@ public static class Replay
         engine.Router.On(Opcodes.PartyList, p =>
         {
             string party = PartyPacket.Read(p) is var (members, packing)
-                ? $"{packing}: {(members.Count == 0 ? "no party" : string.Join(", ", members.Select(m => $"{m.Name} ({m.CharacterId})")))}"
+                ? $"{packing}, dungeon {PartyDungeon(p)}: {(members.Count == 0 ? "no party" : string.Join(", ", members.Select(m => $"{m.Name} ({m.CharacterId})")))}"
                 : $"NOT READABLE ({p.Length} bytes): {Convert.ToHexString(p)}";
             if (party != lastParty)
             {
@@ -56,6 +56,40 @@ public static class Replay
                 parties.Add($"  {now:HH:mm:ss} {party}");
             }
         });
+
+        // Every summon and its owner (§6.7); an owner can be a summon itself.
+        var summons = new List<string>();
+        string Who(int id) => engine.Entities.Player(id) is { } p ? $"{id} {p.Name ?? "(no name)"} [{ClassInfo.KeyFromId(p.ClassId)}]" : $"{id}";
+        engine.Entities.SummonRegistered += (summon, owner) => summons.Add(
+            $"  {now:HH:mm:ss} summon {summon} -> owner {Who(owner)}{(engine.Entities.SummonOwner(owner) is int top ? $", itself a summon of {Who(top)}" : string.Empty)}");
+
+        // Zone changes and the first monster of each dungeon (monster list), to find the
+        // signal for "entered a dungeon": the meter should start fresh there.
+        var zones = new List<string>();
+        int? zoneUser = null;
+        var dungeonsSeen = new HashSet<int>();
+        engine.Router.On(Opcodes.OwnCharacter, p => zones.Add($"  {now:HH:mm:ss} 33 36 own character, entity {PacketReader.Body(p).ReadVarInt()}"));
+        engine.Router.On(Opcodes.UserState, p =>
+        {
+            int id = (int)PacketReader.Body(p).ReadVarInt();
+            if (id != zoneUser)
+            {
+                zones.Add($"  {now:HH:mm:ss} 4A 36 user entity {id}{(zoneUser is int old ? $" (was {old})" : string.Empty)}");
+                zoneUser = id;
+            }
+        });
+        engine.Router.On(Opcodes.Spawn, p =>
+        {
+            int id = (int)PacketReader.Body(p).ReadVarInt();
+            if (engine.Entities.MobCode(id) is int mc && NpcData.DungeonOf(mc) is int dungeon && dungeonsSeen.Add(dungeon))
+            {
+                zones.Add($"  {now:HH:mm:ss} first monster of dungeon {dungeon}: {NpcData.Get(mc)?.Name} (entity {id})");
+            }
+        });
+
+        // Every known dungeon id (u32 or varint) anywhere in a packet: which opcode names the zone.
+        var dungeonIds = NpcData.DungeonIds.Select(d => (uint)d).ToHashSet();
+        var dungeonHits = new Dictionary<(ushort Op, int At, string Kind), (int Count, DateTime First, DateTime Last, HashSet<uint> Ids)>();
 
         // First body varint per packet, to find packets that are only ever about the user.
         var firstIds = new List<(ushort Op, uint Id, DateTime Time)>();
@@ -131,6 +165,7 @@ public static class Replay
                         found.Add($"  {now:HH:mm:ss} {op & 0xFF:X2} {op >> 8:X2} at byte {at} of {p.Length}: {Convert.ToHexString(p.AsSpan(0, Math.Min(p.Length, at + find!.Length + 8)))}");
                     }
 
+                    FindDungeonIds(p, op, now, dungeonIds, dungeonHits);
                     try
                     {
                         firstIds.Add((op, PacketReader.Body(p).ReadVarInt(), now));
@@ -173,6 +208,19 @@ public static class Replay
         report.AppendLine($"Fights: {own.Count}").AppendLine();
         report.AppendLine("Party lists (02 97):");
         parties.ForEach(l => report.AppendLine(l));
+        report.AppendLine();
+        report.AppendLine("Summons (41 36):");
+        summons.ForEach(l => report.AppendLine(l));
+        report.AppendLine();
+        report.AppendLine("Zone changes:");
+        zones.ForEach(l => report.AppendLine(l));
+        report.AppendLine();
+        report.AppendLine("Known dungeon ids in packets (opcode | byte | as | count | first | last | ids):");
+        foreach (var ((op, at, kind), h) in dungeonHits.OrderBy(kv => kv.Value.First).Take(60))
+        {
+            report.AppendLine($"  {op & 0xFF:X2} {op >> 8:X2} | {at} | {kind} | {h.Count} | {h.First:HH:mm:ss} | {h.Last:HH:mm:ss} | {string.Join(", ", h.Ids.Take(5))}");
+        }
+
         report.AppendLine();
 
         for (int i = 0; i < own.Count; i++)
@@ -250,6 +298,59 @@ public static class Replay
         }
 
         File.WriteAllText(path + ".report.txt", report.ToString());
+    }
+
+    // 02 97 header (§6.4): party key, party name, party size, then the dungeon id.
+    private static string PartyDungeon(byte[] packet)
+    {
+        try
+        {
+            PacketReader r = PacketReader.Body(packet);
+            r.ReadU32();
+            r.Skip(r.ReadU8());
+            r.ReadU8();
+            return r.ReadU32().ToString();
+        }
+        catch (PacketFormatException)
+        {
+            return "?";
+        }
+    }
+
+    private static void FindDungeonIds(
+        byte[] packet,
+        ushort op,
+        DateTime now,
+        HashSet<uint> ids,
+        Dictionary<(ushort Op, int At, string Kind), (int Count, DateTime First, DateTime Last, HashSet<uint> Ids)> hits)
+    {
+        for (int at = 0; at < packet.Length; at++)
+        {
+            ReadOnlySpan<byte> rest = packet.AsSpan(at);
+            if (rest.Length >= 4)
+            {
+                Note(BitConverter.ToUInt32(rest), "u32");
+            }
+
+            if (VarInt.TryRead(rest, out uint value, out _))
+            {
+                Note(value, "varint");
+            }
+
+            void Note(uint value, string kind)
+            {
+                if (!ids.Contains(value))
+                {
+                    return;
+                }
+
+                var key = (op, at, kind);
+                hits[key] = hits.TryGetValue(key, out var h)
+                    ? (h.Count + 1, h.First, now, h.Ids)
+                    : (1, now, now, new HashSet<uint>());
+                hits[key].Ids.Add(value);
+            }
+        }
     }
 
     private static readonly List<string> Unusual = new();

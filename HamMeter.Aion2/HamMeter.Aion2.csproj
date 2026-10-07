@@ -8,7 +8,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>HamMeter</AssemblyName>
     <RootNamespace>HamMeter</RootNamespace>
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
     <Authors>NennMichSchinken</Authors>
     <Product>HamMeter for Aion 2</Product>
     <ApplicationIcon>..\assets\HamMeter.ico</ApplicationIcon>

@@ -9,19 +9,26 @@ public sealed record NpcInfo(string Name, bool IsBoss, bool IsDummy, string? Cat
 // Monster names and boss flags by mob code, loaded once from the embedded list.
 public static class NpcData
 {
-    private static readonly Lazy<Dictionary<int, NpcInfo>> Npcs = new(Load);
+    private static readonly Lazy<(Dictionary<int, NpcInfo> Npcs, Dictionary<int, int> Dungeons)> Data = new(Load);
 
-    public static int Count => Npcs.Value.Count;
+    public static int Count => Data.Value.Npcs.Count;
 
-    public static NpcInfo? Get(int mobCode) => Npcs.Value.GetValueOrDefault(mobCode);
+    public static NpcInfo? Get(int mobCode) => Data.Value.Npcs.GetValueOrDefault(mobCode);
 
-    private static Dictionary<int, NpcInfo> Load()
+    // The dungeon a monster belongs to, where the list says (mostly bosses).
+    public static int? DungeonOf(int mobCode) => Data.Value.Dungeons.TryGetValue(mobCode, out int id) ? id : null;
+
+    // Every dungeon id in the list (for --replay, to find the packet that names the zone).
+    public static IEnumerable<int> DungeonIds => Data.Value.Dungeons.Values.Distinct();
+
+    private static (Dictionary<int, NpcInfo>, Dictionary<int, int>) Load()
     {
         var npcs = new Dictionary<int, NpcInfo>();
+        var dungeons = new Dictionary<int, int>();
         using Stream? stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("HamMeter.Npcs.json");
         if (stream is null)
         {
-            return npcs;
+            return (npcs, dungeons);
         }
 
         using JsonDocument doc = JsonDocument.Parse(stream);
@@ -39,9 +46,13 @@ public static class NpcData
                 Flag(v, "isDummy"),
                 Text(v, "category"),
                 Text(v, "tier"));
+            if (v.TryGetProperty("dungeonId", out JsonElement d) && d.ValueKind == JsonValueKind.Number && d.TryGetInt32(out int dungeon))
+            {
+                dungeons[code] = dungeon;
+            }
         }
 
-        return npcs;
+        return (npcs, dungeons);
     }
 
     private static string? Text(JsonElement e, string name) =>

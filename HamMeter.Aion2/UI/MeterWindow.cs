@@ -21,6 +21,9 @@ public sealed class MeterWindow
         return labels;
     }
 
+    // Gold of the boss crown (header and fight history).
+    private static readonly Vector4 CrownColor = new(0.95f, 0.76f, 0.30f, 1f);
+
     private readonly Config m_config;
     private readonly SettingsWindow m_settings;
     private readonly EncounterTracker m_tracker;
@@ -266,20 +269,35 @@ public sealed class MeterWindow
 
         string viewLabel = m_view == -2 ? "Overall" : m_view >= 0 ? "History" : "Current";
         string duration = ev?.Duration ?? "00:00";
-        string main = $"{Metrics.Name(m_metric)}  -  {viewLabel}   ";
+        string rest = $"  -  {viewLabel}   ";
         string paren = $"({duration})";
         float ts = m_config.TopTextSize;
         float ty = wp.Y + ((h - ts) / 2f);
         float tx = wp.X + 12f;
         uint white = Col(new Vector4(1f, 1f, 1f, 1f));
         uint muted = Col(new Vector4(0.557f, 0.557f, 0.576f, 1f));
+
+        float bsize = m_config.IconSize;
+        float gap = m_config.IconSpacing;
+        float iconsLeft = wp.X + width - 10f - (4f * bsize) - (3f * gap);
+
+        // A boss fight shows the boss in place of the metric, behind the history's crown.
+        // A long name is shortened so it stops before the icons.
+        string title = Metrics.Name(m_metric);
+        if (ev is { IsBoss: true } && !string.IsNullOrEmpty(ev.Title))
+        {
+            Icons.Draw(dl, Icon.Crown, new Vector2(tx + 1f, ty + 1f), ts, Col(new Vector4(0f, 0f, 0f, 0.9f)));
+            Icons.Draw(dl, Icon.Crown, new Vector2(tx, ty), ts, Col(CrownColor));
+            tx += ts + 6f;
+            title = ev.Title;
+        }
+
+        string main = this.Fit(title, iconsLeft - 8f - tx - this.TextW(rest + paren, ts), ts) + rest;
         this.Text(dl, new Vector2(tx, ty), main, ts, white);
         this.Text(dl, new Vector2(tx + this.TextW(main, ts), ty), paren, ts, muted);
 
         // Icon row, right-aligned. Drawn from the right, so the visible left-to-right
         // order is: Reset, History, Metric, Settings.
-        float bsize = m_config.IconSize;
-        float gap = m_config.IconSpacing;
         float iconY = wp.Y + ((h - bsize) / 2f);
         float x = wp.X + width - bsize - 10f;
 
@@ -582,7 +600,7 @@ public sealed class MeterWindow
 
                     if (past[i].IsBoss)
                     {
-                        Icons.Draw(pdl, Icon.Crown, at, line, Col(new Vector4(0.95f, 0.76f, 0.30f, 1f)));
+                        Icons.Draw(pdl, Icon.Crown, at, line, Col(CrownColor));
                     }
                 }
             }
@@ -706,6 +724,23 @@ public sealed class MeterWindow
         }
 
         dl.AddText(font, size, pos, col, s);
+    }
+
+    // The text cut to `room` pixels, ending in "..." when it had to be shortened.
+    private string Fit(string s, float room, float size)
+    {
+        if (this.TextW(s, size) <= room)
+        {
+            return s;
+        }
+
+        int n = s.Length;
+        while (n > 0 && this.TextW(s[..n].TrimEnd() + "...", size) > room)
+        {
+            n--;
+        }
+
+        return s[..n].TrimEnd() + "...";
     }
 
     private float TextW(string s, float size)
