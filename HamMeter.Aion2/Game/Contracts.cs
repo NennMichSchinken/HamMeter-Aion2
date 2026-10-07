@@ -24,6 +24,9 @@ public interface IEntityDirectory
     // Whether the entity is a boss according to the monster list.
     bool IsBoss(int entityId);
 
+    // Whether the entity spawned as a monster from the monster list (never a player then).
+    bool IsMonster(int entityId);
+
     // Whether the user's own entity is known; until then every player counts.
     bool UserKnown { get; }
 

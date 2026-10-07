@@ -13,9 +13,13 @@ Format (read by HamMeter's "What's new" and the update popup, keep it this way):
 - New: Boss fights get a fight of their own, end with the boss's death and carry a crown in the history.
 - New: Fights are named after the boss or the main target.
 - New: Works with VPN and ping boosters such as LagoFast (needs Npcap).
-- Improved: Your character is recognised right away, with your name after the first kill; players nearby only count on enemies you fight too.
+- New: Boss fights show the boss's name with a crown at the top of the meter instead of the metric.
+- Improved: Your character is recognised right away, with your name after the first kill.
+- Improved: Only you and your party are listed; players nearby no longer show up in the open world.
 - Improved: Official class icons, with bar colours that match them.
 - Fixed: The Cleric's self-heal while attacking counts as healing.
+- Fixed: Monsters, bosses and summons of summons no longer show up as grey "Player" entries in dungeons.
+- Fixed: Fights no longer run on for 30 seconds after the last enemy died because of a late damage-over-time tick, an unknown heal on a party member or a misread monster.
 
 ## 0.2.0 - 2026-09-24
 - New: HamMeter checks for updates when it starts (can be turned off) and offers a signed one-click update.

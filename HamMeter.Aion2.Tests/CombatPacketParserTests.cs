@@ -272,6 +272,111 @@ public class CombatPacketParserTests
     }
 
     [Fact]
+    public void ASummonsOwnSummon_CountsForThePlayerAtTheTop_NotAsAGreyPlayer()
+    {
+        const int Spirit = 47914;
+        const int SpiritsSummon = 47950;
+        m_entities.SetUser(Gladiator);
+        m_entities.RegisterSummon(Spirit, Gladiator);
+        m_entities.RegisterSummon(SpiritsSummon, Spirit);
+
+        this.Hit(Gladiator, Mob, GladiatorSkill, 1_000);
+        this.Hit(SpiritsSummon, Mob, NpcSkill, 5_000);
+
+        Combatant you = Assert.Single(m_tracker.Current!.Combatants);
+        Assert.Equal(Gladiator, you.Id);
+        Assert.Equal(6_000, you.DamageTotal);
+    }
+
+    [Fact]
+    public void AMonsterFromTheList_IsNeverAPlayer_AndItsDeathEndsTheBossFight()
+    {
+        const int Boss = 9000;
+        m_entities.SetUser(Gladiator);
+        m_entities.AddPlayer(Boss, 12);       // stale player entry on the same id
+        m_entities.SetMobCode(Boss, 2300000); // spawned as Submerged Emon (boss)
+
+        this.Hit(Gladiator, Boss, GladiatorSkill, 5_000);
+        this.Hit(Boss, Gladiator, 12_020_000, 700); // player-like skill code: still the boss
+        this.Died(Boss);
+
+        Assert.False(m_tracker.InCombat);
+        EncounterSnapshot fight = m_tracker.GetPast(0)!;
+        Assert.True(fight.IsBoss);
+        Combatant you = Assert.Single(fight.Combatants);
+        Assert.Equal(5_000, you.DamageTotal);
+        Assert.Equal(700, you.DamageTaken);
+    }
+
+    [Fact]
+    public void DotTicksAfterTheBossDied_StartNoNewFight()
+    {
+        const int Boss = 9000;
+        m_entities.SetMobCode(Boss, 2300000);
+        DateTime t0 = new(2026, 9, 24, 12, 0, 0);
+        DateTime now = t0;
+        m_parser.Clock = () => now;
+
+        this.Hit(Gladiator, Boss, GladiatorSkill, 5_000);
+        now = t0.AddSeconds(30);
+        this.Died(Boss);
+        now = t0.AddSeconds(30.5);
+        this.Effect(Boss, Gladiator, 0x02, GladiatorSkill, 50); // our DoT on the dead boss
+        now = t0.AddSeconds(45);
+        this.Effect(Gladiator, Boss, 0x02, NpcSkill, 80);       // its DoT still on us
+
+        Assert.False(m_tracker.InCombat);
+        Assert.Equal(1, m_tracker.PastCount);
+        Assert.Equal("Submerged Emon", m_tracker.Current!.Title);
+        Assert.Equal(30, m_tracker.Current.Seconds, 3);
+    }
+
+    [Fact]
+    public void ADeadMonstersDot_LongAfterItsDeath_DoesNotKeepTheFightGoing()
+    {
+        DateTime t0 = new(2026, 9, 24, 12, 0, 0);
+        DateTime now = t0;
+        m_parser.Clock = () => now;
+
+        this.Hit(Gladiator, Mob, GladiatorSkill, 1_000);
+        this.Hit(Gladiator, Mob + 1, GladiatorSkill, 1_000);
+        now = t0.AddSeconds(4);
+        this.Died(Mob);
+        now = t0.AddSeconds(15);
+        this.Effect(Gladiator, Mob, 0x02, NpcSkill, 50);  // poison of the dead mob, 11 s later
+        now = t0.AddSeconds(16);
+        this.Died(Mob + 1);
+        m_tracker.Tick(t0.AddSeconds(22));
+
+        Assert.False(m_tracker.InCombat);
+        EncounterSnapshot fight = m_tracker.GetPast(0)!;
+        Assert.Equal(16, fight.Seconds, 3);
+        Assert.Equal(50, fight.Combatants.Single().DamageTaken);
+    }
+
+    [Fact]
+    public void AnUnknownSkillOnAPartyMember_IsNoDamage_AndKeepsNoClockRunning()
+    {
+        m_entities.SetUser(Cleric);
+        m_entities.SetParty([new PartyMember(77, "Hamzi")]);
+        m_entities.LinkCharacter(Gladiator, 77);
+        DateTime t0 = new(2026, 9, 24, 12, 0, 0);
+        DateTime now = t0;
+        m_parser.Clock = () => now;
+
+        this.Hit(Gladiator, Mob, GladiatorSkill, 1_000);
+        this.Hit(Cleric, Gladiator, 17_990_000, 4_000);   // a heal or buff HamMeter does not know
+        now = t0.AddSeconds(4);
+        this.Died(Mob);
+        m_tracker.Tick(t0.AddSeconds(10));
+
+        Assert.False(m_tracker.InCombat);
+        Combatant tank = Assert.Single(m_tracker.GetPast(0)!.Combatants);
+        Assert.Equal(Gladiator, tank.Id);
+        Assert.Equal(1_000, tank.DamageTotal);
+    }
+
+    [Fact]
     public void MonsterList_HasNamesBossFlagsAndDungeons()
     {
         Assert.True(NpcData.Count > 9_000);

@@ -133,6 +133,12 @@ public sealed class EntityRegistry : IEntityDirectory
 
     public bool IsBoss(int entityId) => this.Npc(entityId)?.IsBoss == true;
 
+    // Spawned as a monster from the monster list. That beats a player entry for the same id
+    // (an id reused after a zone change, or a monster that used a player-like skill code);
+    // only the user and the party stay players whatever an old mob code says.
+    public bool IsMonster(int entityId) =>
+        this.Npc(entityId) is not null && entityId != this.UserId && !this.InParty(entityId);
+
     // By the character link, or by name when the link packet was missed (§4).
     public bool InParty(int entityId) =>
         m_party.Count > 0

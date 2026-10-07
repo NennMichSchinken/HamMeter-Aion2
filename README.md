@@ -12,7 +12,7 @@ HamMeter reads the game's network packets passively (via Npcap, or Windows raw s
 - **Capture** (`HamMeter.Aion2/Capture`): finds `Aion2.exe`'s own connections and reads only those, through Npcap (also with VPN / ping boosters; tested with LagoFast) or raw sockets.
 - **Packets** (`HamMeter.Aion2/Protocol`): cuts the stream into game packets, unpacks LZ4 bundles and routes packets by opcode.
 - **Game** (`HamMeter.Aion2/Game`): who is who (your character, your party, other players, summons and their owners), what skill codes mean (class, heals, damage over time) and the monster list for names and bosses.
-- **Fights** (`HamMeter.Aion2/Combat`): damage done, damage taken, healing, deaths. Like combat in WoW, every pack is a fight of its own: the fight clock stops when the last enemy dies, so walking never lowers your DPS. Bosses always get a fight of their own. You and your party start fights; players who are merely nearby only count on enemies you fight too.
+- **Fights** (`HamMeter.Aion2/Combat`): damage done, damage taken, healing, deaths. Like combat in WoW, every pack is a fight of its own: the fight clock stops when the last enemy dies, so walking never lowers your DPS. Bosses always get a fight of their own. Only you and your party are listed; players who are merely nearby never are.
 - **The overlay** (`HamMeter.Aion2/UI`): a port of the FFXIV HamMeter's ImGui drawing code onto [ClickableTransparentOverlay](https://github.com/zaafar/ClickableTransparentOverlay).
 
 ## Principles
@@ -41,7 +41,7 @@ HamMeter reads the game's network packets passively (via Npcap, or Windows raw s
 
 - Metrics: Damage Done, Damage Taken, Healing Done, Healing Taken, Deaths
 - Current fight / Overall / per-fight history, named after the boss or main target
-- Boss fights are kept apart from the trash before and after them and marked with a crown in the history
+- Boss fights are kept apart from the trash before and after them, show the boss's name at the top of the meter and are marked with a crown
 - Class icons or text tags, per-class or per-role colours (fully editable)
 - Nine bar textures to choose from (Flat, Smooth, Gradient, Bevel, Sheen, Glow, Glow top, Glow bottom, Aurora)
 - Lives in the notification area (tray icon), no taskbar button
