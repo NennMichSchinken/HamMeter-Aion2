@@ -32,6 +32,9 @@ public interface IEntityDirectory
 
     // Whether the entity is a member of the user's party (02 97).
     bool InParty(int entityId);
+
+    // Whether some party members are not tied to an entity yet (no link, no name).
+    bool PartyIncomplete { get; }
 }
 
 // What skill codes mean (docs/protocol.md §7).

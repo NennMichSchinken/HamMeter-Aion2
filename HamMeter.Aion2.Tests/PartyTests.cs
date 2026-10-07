@@ -78,6 +78,49 @@ public class PartyTests
         Assert.Null(tracker.Current);
     }
 
+    [Fact]
+    public void StartedInsideADungeon_UnnamedPlayersCountOnOurEnemies_WhilePartyMembersAreMissing()
+    {
+        var tracker = new EncounterTracker();
+        using PacketEngine engine = PacketEngine.Offline(tracker, NullLoggerFactory.Instance);
+        const int TheirMob = Mob + 1;
+
+        engine.Stream.Dispatch(Packet(Opcodes.UserState, w => { w.VarInt(User); w.Bytes(6); }));
+        engine.Stream.Dispatch(PartyList(Packing.PerRun));                // no names, no links
+        engine.Stream.Dispatch(Hit(Tank, Mob, 12_020_000, 800));          // nothing to join yet
+        Assert.Null(tracker.Current);
+
+        engine.Stream.Dispatch(Hit(User, Mob, 17_010_000, 1_000));
+        engine.Stream.Dispatch(Hit(Tank, Mob, 12_020_000, 800));          // on our enemy: counts
+        engine.Stream.Dispatch(Hit(Tank, TheirMob, 12_020_000, 5_000));   // not our enemy
+        engine.Stream.Dispatch(Hit(Mob, Tank, 1_234_567, 300));           // the tank takes a hit
+        engine.Stream.Dispatch(Hit(User, Tank, 17_120_000, 250));         // and our heal
+
+        var fight = tracker.Current!.Combatants.ToDictionary(c => c.Id);
+        Assert.Equal(2, fight.Count);
+        Assert.Equal(800, fight[Tank].DamageTotal);
+        Assert.Equal(300, fight[Tank].DamageTaken);
+        Assert.Equal(250, fight[Tank].HealingTaken);
+        Assert.Equal(250, fight[User].HealedTotal);
+    }
+
+    [Fact]
+    public void OnceEveryPartyMemberIsKnown_UnnamedPlayersNoLongerCount()
+    {
+        var tracker = new EncounterTracker();
+        using PacketEngine engine = PacketEngine.Offline(tracker, NullLoggerFactory.Instance);
+        const int Stranger = 3700;
+
+        engine.Stream.Dispatch(Packet(Opcodes.UserState, w => { w.VarInt(User); w.Bytes(6); }));
+        engine.Stream.Dispatch(PartyList(Packing.PerRun));                // the user is Freitag
+        engine.Stream.Dispatch(OtherCharacter(Tank, "Hamzi", 12));
+        engine.Stream.Dispatch(Link(Healer, 0x0A03));
+        engine.Stream.Dispatch(Hit(User, Mob, 17_010_000, 1_000));
+        engine.Stream.Dispatch(Hit(Stranger, Mob, 11_020_000, 500));
+
+        Assert.Single(tracker.Current!.Combatants);
+    }
+
     // ----- helpers ---------------------------------------------------------------------
 
     // 02 97 in the layout of §6.4, with the bit fields in the given packing.

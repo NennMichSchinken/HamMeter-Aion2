@@ -10,7 +10,9 @@ namespace HamMeter.Capture;
 //   - healing (heal skills on 04 38, heal/HoT effect types on 05 38),
 //   - damage taken (monsters hitting a player),
 //   - deaths of players, and of monsters (they pause the fight clock).
-// Only the user and the party reach the tracker; players nearby are dropped here.
+// Only the user and the party reach the tracker; players nearby are dropped here. A player
+// without a name while party members are unaccounted for may be one of them and counts
+// on the fight's enemies.
 // Who is who comes from an IEntityDirectory, what skill codes mean from ISkillRules.
 public sealed class CombatPacketParser
 {
@@ -138,18 +140,19 @@ public sealed class CombatPacketParser
     // fire, so an amount on one of ours is a heal or buff HamMeter does not know yet.
     private void PlayerHit(DateTime now, PlayerRef source, int targetId, int skillCode, long amount, bool tick)
     {
-        if (!this.IsOurs(source))
+        bool sure = this.IsOurs(source);
+        if (!sure && !this.MaybeOurs(source))
         {
             return;
         }
 
-        if (this.ResolvePlayer(targetId) is { } ally && this.IsOurs(ally))
+        if (this.ResolvePlayer(targetId) is { } ally && (this.IsOurs(ally) || this.MaybeOurs(ally)))
         {
             this.SkillLog?.Add(source, "ally?", skillCode, amount);
             return;
         }
 
-        m_tracker.DamageDone(now, source, amount, targetId, m_entities.TargetName(targetId), m_entities.IsBoss(targetId), tick);
+        m_tracker.DamageDone(now, source, amount, targetId, m_entities.TargetName(targetId), m_entities.IsBoss(targetId), tick, sure);
         this.SkillLog?.Add(source, tick ? "tick" : "hit", skillCode, amount);
     }
 
@@ -157,20 +160,29 @@ public sealed class CombatPacketParser
     // player as the actor is a skill HamMeter does not know, not an enemy.
     private void MonsterHit(DateTime now, int actorId, int targetId, long amount, bool tick)
     {
-        if (actorId != targetId && this.ResolvePlayer(actorId) is null
-            && this.ResolvePlayer(targetId) is { } victim && this.IsOurs(victim))
+        if (actorId != targetId && this.ResolvePlayer(actorId) is null && this.ResolvePlayer(targetId) is { } victim)
         {
-            m_tracker.DamageTaken(now, victim, amount, actorId, tick);
+            bool sure = this.IsOurs(victim);
+            if (sure || this.MaybeOurs(victim))
+            {
+                m_tracker.DamageTaken(now, victim, amount, actorId, tick, sure);
+            }
         }
     }
 
     // Healing done counts for ours, healing taken on ours, whoever healed.
-    private void Heal(DateTime now, PlayerRef healer, PlayerRef? healed, long amount) =>
+    private void Heal(DateTime now, PlayerRef healer, PlayerRef? healed, long amount)
+    {
+        bool healerSure = this.IsOurs(healer);
+        bool healedSure = healed is { } h && this.IsOurs(h);
         m_tracker.Healing(
             now,
-            this.IsOurs(healer) ? healer : null,
-            healed is { } h && this.IsOurs(h) ? h : null,
-            amount);
+            healerSure || this.MaybeOurs(healer) ? healer : null,
+            healed is { } t && (healedSure || this.MaybeOurs(t)) ? t : null,
+            amount,
+            healerSure,
+            healedSure);
+    }
 
     // Valid only if it fits a byte and the low nibble is 4-7.
     private static int LayoutSwitch(uint raw)
@@ -253,9 +265,9 @@ public sealed class CombatPacketParser
         PacketReader reader = PacketReader.Body(packet);
         int entityId = (int)reader.ReadVarInt();
 
-        if (this.ResolvePlayer(entityId) is { } player && this.IsOurs(player))
+        if (this.ResolvePlayer(entityId) is { } player && (this.IsOurs(player) || this.MaybeOurs(player)))
         {
-            m_tracker.Death(this.Clock(), player);
+            m_tracker.Death(this.Clock(), player, this.IsOurs(player));
             return;
         }
 
@@ -343,6 +355,15 @@ public sealed class CombatPacketParser
     // The user and the party versus players who only happen to be nearby, who never count.
     // Until the user is known every player counts.
     private bool IsOurs(PlayerRef p) => !m_entities.UserKnown || p.IsUser || m_entities.InParty(p.Id);
+
+    // A player HamMeter has no name for while party members are still unaccounted for: may
+    // be one of them. Started inside a dungeon, the party's name packets came before
+    // HamMeter did and two of four members went missing (replay of 2026-10-07). Strangers
+    // who come into view while HamMeter runs have names, and solo there is no party to miss.
+    private bool MaybeOurs(PlayerRef p) =>
+        !m_entities.IsSummon(p.Id) && !m_entities.IsMonster(p.Id)
+        && m_entities.Player(p.Id) is { Name: null, IsUser: false }
+        && m_entities.PartyIncomplete;
 
     private static PlayerRef ToRef(KnownPlayer p)
     {

@@ -20,6 +20,8 @@ Format (read by HamMeter's "What's new" and the update popup, keep it this way):
 - Fixed: The Cleric's self-heal while attacking counts as healing.
 - Fixed: Monsters, bosses and summons of summons no longer show up as grey "Player" entries in dungeons.
 - Fixed: Fights no longer run on for 30 seconds after the last enemy died because of a late damage-over-time tick, an unknown heal on a party member or a misread monster.
+- Fixed: Adds that explode or vanish without dying no longer keep a fight going through the walk to the next pack.
+- Fixed: When HamMeter starts inside a dungeon, party members it has no name for yet still count.
 
 ## 0.2.0 - 2026-09-24
 - New: HamMeter checks for updates when it starts (can be turned off) and offers a signed one-click update.

@@ -377,6 +377,49 @@ public class CombatPacketParserTests
     }
 
     [Fact]
+    public void AnEnemyThatNeverDies_LeavesTheFightAfterTenQuietSeconds()
+    {
+        const int Bomb = Mob + 1; // explodes: no death packet
+        DateTime t0 = new(2026, 9, 24, 12, 0, 0);
+        DateTime now = t0;
+        m_parser.Clock = () => now;
+
+        this.Hit(Gladiator, Mob, GladiatorSkill, 1_000);
+        this.Hit(Bomb, Gladiator, NpcSkill, 300);
+        now = t0.AddSeconds(4);
+        this.Hit(Gladiator, Mob, GladiatorSkill, 1_000);
+        this.Died(Mob);
+
+        m_tracker.Tick(t0.AddSeconds(9));
+        Assert.True(m_tracker.InCombat);                  // the bomb was active 9 s ago
+        Assert.Equal(9, m_tracker.CurrentAt(t0.AddSeconds(9))!.Seconds, 3);
+        m_tracker.Tick(t0.AddSeconds(11));
+
+        Assert.False(m_tracker.InCombat);
+        Assert.Equal(4, m_tracker.GetPast(0)!.Seconds, 3); // the quiet time does not count
+    }
+
+    [Fact]
+    public void ABoss_StaysInTheFight_EvenWhenNobodyHitsItForAWhile()
+    {
+        const int Boss = 9000;
+        m_entities.SetMobCode(Boss, 2300000);
+        DateTime t0 = new(2026, 9, 24, 12, 0, 0);
+        DateTime now = t0;
+        m_parser.Clock = () => now;
+
+        this.Hit(Gladiator, Boss, GladiatorSkill, 5_000);
+        m_tracker.Tick(t0.AddSeconds(20));                // e.g. an untargetable phase
+        Assert.True(m_tracker.InCombat);
+
+        now = t0.AddSeconds(25);
+        this.Hit(Gladiator, Boss, GladiatorSkill, 5_000);
+        this.Died(Boss);
+
+        Assert.Equal(25, m_tracker.GetPast(0)!.Seconds, 3);
+    }
+
+    [Fact]
     public void MonsterList_HasNamesBossFlagsAndDungeons()
     {
         Assert.True(NpcData.Count > 9_000);

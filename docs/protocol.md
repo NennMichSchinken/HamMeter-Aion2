@@ -269,7 +269,9 @@ server id. Needs proper decoding.
 ### 6.3 `20 36` — entity ↔ character link
 
 **Status: observed** — used by HamMeter to match entities to party members (§6.4);
-needs a group recording to confirm.
+needs a group recording to confirm. **Not seen once** in a group dungeon recording of
+2026-10-07 (recording started inside the dungeon, then a zone change to the open world),
+so party members are mostly matched by name.
 
 | Field | Type |
 |---|---|
@@ -293,7 +295,7 @@ Header:
 | party key | u32 LE |
 | party name | u8 length + UTF-8 |
 | party size | u8 |
-| dungeon id | u32 LE |
+| dungeon id | u32 LE — **open:** whether it names the dungeon the party is in (the monster list's dungeon ids, e.g. 600002); the replay report prints it |
 | unknown | u8, u8 |
 | leader database id | u64 LE |
 | unknown | 1 bit (§6.6) |
@@ -481,14 +483,27 @@ Confirmed mob codes from recordings: 2100456 Red Cap Fungen, 2100041 Red Cap Fun
 2700914 Toblini (boss, sealed dungeon; the fight ended with its death), 2700915 Hideout
 Sura (its adds).
 
+**Enemies that never die:** some adds send no death (`Condensed Krao` explodes, recording
+of 2026-10-07) and kept a fight going through the walk to the next pack. An enemy nobody
+hit and that hit nobody for 10 s leaves the fight as if it died; bosses stay until they die.
+
 **Party and players nearby:** once the user is known (§6.10), only the user and the party
 (§6.4) are listed. Other players never count, not even on enemies the user or the party
 fight too (strangers in the open world filled the list that way); a stranger's heal on
 one of ours still counts as healing taken. Until the user is known every player counts.
+Names come with the packet of a player appearing (`45 36`) or a killing blow (§5.3); when
+HamMeter starts inside a dungeon the appearance packets have passed. So while party
+members are unaccounted for (no link, no name), a player without a name may be one of
+them and counts on the fight's enemies, without starting a fight of its own.
 
 ---
 
 ## Open points
+
+0. Which packet says "entered a dungeon" (the meter should start fresh there, but not
+   when leaving): candidates are the party's dungeon id (§6.4) and the zone change
+   (`33 36`, a new user entity in `4A 36`). The replay report lists zone changes, the
+   first monster of each dungeon and every packet carrying a known dungeon id.
 
 1. Group test on Global: party list packing (§6.6), entity link (§6.3), heals on others,
    damage taken by the tank.
