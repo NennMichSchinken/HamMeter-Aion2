@@ -57,6 +57,12 @@ public static class Replay
             }
         });
 
+        // Every summon and its owner (§6.7); an owner can be a summon itself.
+        var summons = new List<string>();
+        string Who(int id) => engine.Entities.Player(id) is { } p ? $"{id} {p.Name ?? "(no name)"} [{ClassInfo.KeyFromId(p.ClassId)}]" : $"{id}";
+        engine.Entities.SummonRegistered += (summon, owner) => summons.Add(
+            $"  {now:HH:mm:ss} summon {summon} -> owner {Who(owner)}{(engine.Entities.SummonOwner(owner) is int top ? $", itself a summon of {Who(top)}" : string.Empty)}");
+
         // First body varint per packet, to find packets that are only ever about the user.
         var firstIds = new List<(ushort Op, uint Id, DateTime Time)>();
 
@@ -173,6 +179,9 @@ public static class Replay
         report.AppendLine($"Fights: {own.Count}").AppendLine();
         report.AppendLine("Party lists (02 97):");
         parties.ForEach(l => report.AppendLine(l));
+        report.AppendLine();
+        report.AppendLine("Summons (41 36):");
+        summons.ForEach(l => report.AppendLine(l));
         report.AppendLine();
 
         for (int i = 0; i < own.Count; i++)
