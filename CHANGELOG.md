@@ -6,7 +6,7 @@ Format (read by HamMeter's "What's new" and the update popup, keep it this way):
   should not skip (e.g. a parser fix after an Aion 2 patch).
 - Each line is `- New: ...`, `- Improved: ...` or `- Fixed: ...`.
 
-## 0.3.0
+## 0.3.0 - 2026-10-07
 - New: HamMeter reads the game with its own packet reader.
 - New: Group play: your party counts on every enemy of the group, with the tank's damage taken and heals between party members.
 - New: Fights like combat in WoW: every pack is its own fight and walking between packs no longer lowers your DPS.

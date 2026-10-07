@@ -4,3 +4,9 @@ obj/
 *.user
 TestResults/
 artifacts/
+
+# Packet recordings and replay output (contain character names)
+*.hmrec
+*.hmrec.*
+*.report.txt
+$rec.*
