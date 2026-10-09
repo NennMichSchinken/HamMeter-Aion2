@@ -18,7 +18,7 @@ if (Test-Path $out) { Remove-Item $out -Recurse -Force }
 New-Item -ItemType Directory $out | Out-Null
 
 # Every release needs patch notes: they become "What's new" and the GitHub release text.
-$changelog = Get-Content (Join-Path $root "CHANGELOG.md") -Raw
+$changelog = Get-Content (Join-Path $root "CHANGELOG.md") -Raw -Encoding UTF8
 $escaped = [regex]::Escape($Version)
 $section = [regex]::Match($changelog, "(?ms)^## v?$escaped\b[^\r\n]*\r?\n(.*?)(?=^## |\z)")
 if (-not $section.Success) { throw "CHANGELOG.md has no entry '## $Version - yyyy-mm-dd'. Add the patch notes first." }
