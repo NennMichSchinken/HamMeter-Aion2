@@ -1,4 +1,5 @@
 using System.Numerics;
+using HamMeter.Game;
 using ImGuiNET;
 
 namespace HamMeter.UI;
@@ -191,6 +192,18 @@ public sealed class SettingsWindow
                 ImGui.TextDisabled("Clears the meter and history when you enter a dungeon for a");
                 ImGui.TextDisabled("new run. Porting out and back in during a run keeps them.");
                 ImGui.Unindent(24f);
+                changed |= CheckboxRow("Overall: boss fights only", ref m_config.OverallBossesOnly);
+                ImGui.Indent(24f);
+                ImGui.TextDisabled("The numbers to compare. Trash fights stay in the history.");
+                ImGui.Unindent(24f);
+                ImGui.Dummy(new Vector2(0f, 6f));
+                int language = (m_config.SkillLanguage ?? SkillNames.DefaultLanguage()) == "de" ? 1 : 0;
+                if (Combo("Skill names", ref language, ["English", "Deutsch"]))
+                {
+                    m_config.SkillLanguage = language == 1 ? "de" : "en";
+                    changed = true;
+                }
+
                 ImGui.Dummy(new Vector2(0f, 6f));
                 changed |= SliderWhole("Fight ends after (s)", ref m_config.FightEnd, 0f, 60f);
                 ImGui.Indent(24f);

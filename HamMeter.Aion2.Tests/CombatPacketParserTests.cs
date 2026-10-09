@@ -450,7 +450,7 @@ public class CombatPacketParserTests
             w.VarInt(actor);
             w.U32(skill);
             w.U8(0);          // unknown
-            w.VarInt(1);      // damage type (normal)
+            w.VarInt(2);      // hit type (2 = normal)
             w.Bytes(3);       // damage flags, unknown, direction
             w.Bytes(8);       // unknown u32 + tail
             w.VarInt(10_000); // power scalar

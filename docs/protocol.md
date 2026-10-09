@@ -43,10 +43,23 @@ in-game meter.
 ### TCP reassembly
 
 - Segments are appended in sequence-number order per connection.
-- Duplicates / retransmissions (segment entirely before the expected sequence) are
-  dropped; sequence arithmetic must be modulo 2³².
-- On a gap (segment after the expected sequence) the missing bytes are lost; the
-  stream continues from the new position and the framer re-synchronises (§2).
+- Duplicates (segment entirely before the expected sequence) are dropped; a resend that
+  overlaps passed bytes passes only its new bytes. Sequence arithmetic is modulo 2³².
+- On a gap (segment after the expected sequence) the segments behind it are **held**
+  until the missing one is sent again: segments get lost on the way (VPN, ping booster)
+  and the resend comes after the ones behind it. Passing them on at once lost hits
+  (dungeon run of 2026-10-09: 5 of the user's hits on the end boss, ~4,400 damage, missing
+  against the game's damage analyzer). A gap that has not filled after 1.5 s or 2 MB held is
+  skipped: the stream continues after it and the framer re-synchronises (§2).
+- **IPv4 total length 0** means a segment Windows did not cut to the MTU (loopback, which
+  VPNs and ping boosters use, or segmentation offload): its length is the captured length.
+  Npcap captures up to 256 KB per packet for the same reason.
+- **Npcap filter changes drop packets.** Setting a new kernel filter makes Npcap discard
+  what waits in its buffer. HamMeter rebuilt the filter every 2 s from Aion's connections
+  (local ports and table order included), so it changed often: 16 gaps of 33–1,252 bytes
+  in 7 minutes on 2026-10-09, starting on the 2 s refresh beat and never filled, one of
+  them with the spawn (`41 36`) of the user's Holy Aura, whose 8 hits on the boss were then
+  nobody's. The filter now names server endpoints only, sorted, and only grows.
 - `FIN` / `RST` end the stream; its buffers are dropped.
 
 ---
@@ -158,24 +171,36 @@ arrives.
 |---|---|---|---|
 | 1 | length, opcode | | §2 |
 | 2 | target | varint | entity id |
-| 3 | layout switch | varint | valid only if ≤ 255 and the low nibble is 4–7; otherwise drop the packet |
+| 3 | layout switch | varint | valid only if ≤ 255 and the low nibble is 4–7; otherwise drop the packet. Bit `20`: multi hit |
 | 4 | unknown | varint | |
 | 5 | actor | varint | entity id of the caster |
 | 6 | skill code | u32 LE | §7 |
 | 7 | unknown | u8 | |
-| 8 | hit type | varint | `3` = critical |
+| 8 | hit type | varint | `2` normal, `3` critical, `1` miss, `6` resist; miss and resist end here (no damage) |
 | 9 | detail block | 8 or 11 bytes | see below |
 | 10 | unknown | varint | scales with the actor's power |
 | 11 | amount | varint | damage or heal amount |
 
 Detail block:
 
-- layout switch low nibble **≠ 4**: `u8 hit flags`, `u8 unknown`, `u8 direction`,
-  then 8 bytes.
+- low nibble **= 6**: `u8 hit flags`, `varint HP restored`, `u8 direction`, then 8 bytes.
+- low nibble **5 or 7** (not seen in the recordings so far): 3 bytes, then 8 bytes.
 - low nibble **= 4**: only the 8 bytes.
 
-Hit flags (**observed**): bit 0 back attack, bit 1 parry, bit 2 perfect, bit 3 double
-damage. Direction (**observed**): bit 0 back, bit 1 front.
+Hit flags (**observed**, 3,944 hits of 2026-10-08, layouts 4 and 6 only): `01` block, `02`
+parry, `04` perfect, `08` double damage; `10`, `20` and `40` are rare; `80` is set for some
+skills on every hit. Block and parry are on hits a player takes. Direction: `00` none,
+`01` back, `02` front. Hit type: 2,986 normal, 958 critical. HamMeter counts these per
+skill (crit, back, front, double, perfect, multi hit, missed) and per player (parry, block
+of the hits taken).
+
+**Confirmed** against the game's damage analyzer ("Kampfanalyse"), two fights of
+2026-10-09 (165 and 106 hits on a training scarecrow): crit, back, front, `08` (the
+analyzer's "Wucht", column DOUB), `04` ("Perfektion", PERF) and the misses match in total
+and per skill. Bit `20` of the **layout switch** (`26` instead of `06`) is the analyzer's
+"Mehrfachtreffer" (MULT): 14 of 106 hits, matching per skill. The analyzer's own "Block"
+and "Eisenwall" are about the target's defence against your hits; HamMeter's parry and block
+are about the hits a player takes, which the analyzer does not show.
 
 Meaning:
 
@@ -235,9 +260,11 @@ whatever HamMeter took the entity for, so a misread entity cannot keep the clock
 
 ### 5.4 `00 8D` — remaining HP
 
-**Status: observed** (not used by HamMeter)
+**Status: observed** (HamMeter: the boss line of the chart)
 
 After length and opcode: entity varint, three unknown varints, current HP as u64 LE.
+Verified 2026-10-08: Divine Auldor went from 1,123,482 to 0 in the second it died, and
+the party's damage on it summed to the same 1.12 million.
 
 ---
 
@@ -389,6 +416,15 @@ looks like a player's), unless it is the user or a party member.
 character name as u8 length + UTF-8 at byte 13 — a possible, more reliable way to find
 the owner than the pattern above.
 
+**Observed (2026-10-09, three recordings):** right after the entity id comes a u16 whose
+low byte tells the kind of entity: `0C`/`0D` NPC, `04`/`05` other objects, `1C` a
+short-lived skill effect, `1D`, `1F`, `5D`, `5F` summons and pets. Some spawns carry an
+owner block `<owner u32> <legion u32> <u16 0> <server u16> <u8 length + legion name>`. The
+pattern above and that block name the same owner for all 35 `5F` summons; for `1F` (e.g.
+a Cleric's pet) only the pattern finds the owner, for `5D` only the block (3 entities,
+none of which dealt damage). `1C` effects get no owner from either, which is right: their
+"parent" would be the skill's target, not its caster. So HamMeter keeps the pattern.
+
 Proper decoding of this packet is one of the main open points.
 
 ### 6.8 `03 36` — server time
@@ -500,6 +536,21 @@ cleared (state 3) and it started less than an hour ago: that is porting out and 
 Leaving never starts anything. With the setting "Reset when a dungeon run starts" (on by
 default) the meter and its history are cleared. **Open:** whether a re-entry into a run
 sends state 1 again or a new first time; that would tell runs apart without the rule.
+
+### 6.15 `06 38` — checked, not used
+
+First field an entity varint. Said elsewhere to be sent only about the user and the party.
+**Observed** (three recordings, TW, 2026-10-07/08): the user by far most often (313 to 723
+times), but also bosses, monsters and summons the user fights; the party members hardly
+ever. So it is no party signal here, and the user is known from `4A 36` anyway.
+
+### 6.16 `42 36` — entity state, checked, not used
+
+Entity varint, varint `0`, flag varint: `1` loaded dead or removed, `3` died in combat,
+`7` gone from the world. **Observed:** flag 3 comes 1–4 s after the `04 8D` of the same
+death (§5.3 is faster); the "Condensed Krao" adds that explode without a death got flag 1
+only about a minute later, and flag 7 came 12 s after the last hit on a test subject. The
+10-second rule for quiet enemies (§8) stays better.
 
 ### 6.9 Not used by HamMeter
 

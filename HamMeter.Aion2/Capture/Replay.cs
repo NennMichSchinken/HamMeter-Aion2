@@ -432,6 +432,24 @@ public static class Replay
             : (now, now, amount, null);
     }
 
+    // Development (--preview-details): plays a recording into a tracker in recorded time, so
+    // the overlay shows its fights.
+    public static void Load(string path, EncounterTracker tracker)
+    {
+        using PacketEngine engine = PacketEngine.Offline(tracker, Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance);
+        DateTime now = DateTime.MinValue;
+        engine.Parser.Clock = () => now;
+        engine.Dungeons.Clock = () => now;
+        foreach ((DateTimeOffset time, byte[] packet) in Read(path, new StringBuilder()))
+        {
+            now = time.LocalDateTime;
+            tracker.Tick(now);
+            engine.Stream.Dispatch(packet);
+        }
+
+        tracker.Tick(now.AddMinutes(1));
+    }
+
     // A recording that is still being written ends with an incomplete record.
     private static IEnumerable<(DateTimeOffset Time, byte[] Packet)> Read(string path, StringBuilder report)
     {

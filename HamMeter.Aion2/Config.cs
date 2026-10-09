@@ -14,6 +14,8 @@ public class Config
     public bool OnlyInCombat = false;
     public bool ConfirmReset = true;
     public bool ResetOnNewDungeonRun = true; // empty meter and history for every new run
+    public bool OverallBossesOnly = true;    // Overall sums the boss fights only
+    public string? SkillLanguage = null;     // "de" / "en"; null = the Windows language
     public bool Locked = false;
     public float FightEnd = 5f;        // seconds after the last enemy died
     public float CombatTimeout = 30f;  // safety: seconds without any damage

@@ -6,6 +6,14 @@ Format (read by HamMeter's "What's new" and the update popup, keep it this way):
   should not skip (e.g. a parser fix after an Aion 2 patch).
 - Each line is `- New: ...`, `- Improved: ...` or `- Fixed: ...`.
 
+## 0.4.0 - 2026-10-09
+- New: Click a bar to see that player's top skills with crit, back attack and double hit rates.
+- New: "Details" opens a window with every skill, the hit rates (crit, back, front, double, perfect, multi hit; the same numbers as the game's damage analyzer) and a chart of DPS or healing over the fight, with your party and the boss's HP.
+- New: Skill names in German or English (Settings → Display).
+- New: Overall sums only the boss fights, the numbers to compare (Settings → Display, on by default).
+- Fixed: Russian names show in full instead of "?????".
+- Fixed: Hits are no longer lost now and then while capturing with Npcap (for example with VPN or ping boosters such as LagoFast). Checked against the game's damage analyzer: every boss matches.
+
 ## 0.3.1 - 2026-10-09
 - New: Every new dungeon run starts with an empty meter and history. Porting out and back in during a run keeps your fights (Settings → Display, on by default).
 - Fixed: Party members show up in the open world too, also when HamMeter starts after the party was formed or while they stand next to you.

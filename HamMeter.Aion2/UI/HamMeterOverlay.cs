@@ -11,12 +11,13 @@ namespace HamMeter.UI;
 public sealed class HamMeterOverlay : Overlay
 {
     // Microsoft JhengHei ships with Windows and covers Latin plus Traditional Chinese,
-    // which Taiwan-server character names need.
-    private static readonly string[] FontCandidates =
-    [
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "msjh.ttc"),
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "segoeui.ttf"),
-    ];
+    // which Taiwan-server character names need; it has no Cyrillic, so Segoe UI is merged
+    // in for Russian names.
+    private static readonly string ChineseFont =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "msjh.ttc");
+
+    private static readonly string LatinFont =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "segoeui.ttf");
 
     private const int FontSize = 18;
 
@@ -46,6 +47,8 @@ public sealed class HamMeterOverlay : Overlay
     public void ShowSettingsPreview(bool openTextureList) => m_settings.ShowBarsSection(openTextureList);
 
     public void ShowCornerPreview() => m_meter.PreviewCorner = true;
+
+    public void ShowDetailsPreview(bool expandedOnly) => m_meter.PreviewDetails(expandedOnly);
 
     // Raised after a setting changed (so the host can forward e.g. packet recording).
     public event Action? SettingsChanged
@@ -78,13 +81,23 @@ public sealed class HamMeterOverlay : Overlay
         m_iniPath = Marshal.StringToCoTaskMemUTF8(Path.Combine(Config.DataDirectory, "imgui.ini"));
         ImGui.GetIO().NativePtr->IniFilename = (byte*)m_iniPath;
 
-        string? font = FontCandidates.FirstOrDefault(File.Exists);
-        if (font is not null)
+        bool chinese = File.Exists(ChineseFont), latin = File.Exists(LatinFont);
+        if (chinese || latin)
         {
-            FontGlyphRangeType ranges = font.EndsWith("msjh.ttc", StringComparison.OrdinalIgnoreCase)
-                ? FontGlyphRangeType.ChineseFull
-                : FontGlyphRangeType.English;
-            this.ReplaceFont(font, FontSize, ranges);
+            this.ReplaceFont(config =>
+            {
+                ImFontAtlasPtr fonts = ImGui.GetIO().Fonts;
+                if (chinese)
+                {
+                    fonts.AddFontFromFileTTF(ChineseFont, FontSize, config, fonts.GetGlyphRangesChineseFull());
+                    config->MergeMode = 1; // Segoe UI only fills in the glyphs JhengHei lacks
+                }
+
+                if (latin)
+                {
+                    fonts.AddFontFromFileTTF(LatinFont, FontSize, config, fonts.GetGlyphRangesCyrillic());
+                }
+            });
         }
 
         // One request to GitHub when enabled; offline simply means no popup.

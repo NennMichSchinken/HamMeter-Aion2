@@ -46,6 +46,7 @@ public sealed class EncounterTracker
     private EncounterSnapshot? m_lastFinished;
     private EncounterSnapshot? m_overall;
     private int m_overallCount = -1;
+    private bool m_overallBosses;
     private int m_generation;
 
     // Seconds after the last engaged enemy died before the fight counts as over.
@@ -54,8 +55,9 @@ public sealed class EncounterTracker
     // Seconds without any damage (dealt or taken) before a fight ends regardless.
     public double IdleTimeoutSeconds { get; set; } = 30;
 
-    // tick: a damage-over-time tick (05 38) rather than a direct hit.
-    public void DamageDone(DateTime time, PlayerRef source, long amount, int targetId, string targetName, bool targetIsBoss = false, bool tick = false, bool sure = true)
+    // tick: a damage-over-time tick (05 38) rather than a direct hit. skill and detail feed
+    // the skill details (0 / none when unknown).
+    public void DamageDone(DateTime time, PlayerRef source, long amount, int targetId, string targetName, bool targetIsBoss = false, bool tick = false, bool sure = true, int skill = 0, HitDetail detail = default)
     {
         EncounterSnapshot? finished = null;
         lock (m_sync)
@@ -64,7 +66,7 @@ public sealed class EncounterTracker
             {
                 if (m_current is { Active: true } fight && fight.IsEnemy(targetId))
                 {
-                    fight.Get(source).Damage += amount;
+                    fight.Get(source).Add(time - fight.Start, amount, skill, detail, heal: false, tick);
                     fight.AddTargetDamage(targetId, targetName, amount);
                     fight.Touch(targetId, time);
                 }
@@ -86,7 +88,7 @@ public sealed class EncounterTracker
             }
 
             Encounter enc = this.BeginOrContinue(time);
-            enc.Get(source).Damage += amount;
+            enc.Get(source).Add(time - enc.Start, amount, skill, detail, heal: false, tick);
             enc.AddTargetDamage(targetId, targetName, amount);
             if (!dead)
             {
@@ -101,8 +103,34 @@ public sealed class EncounterTracker
         this.Raise(finished);
     }
 
+    // A hit of this skill that did no damage (missed or resisted): counts on the skill only,
+    // in a running fight.
+    public void Missed(PlayerRef source, int skill)
+    {
+        lock (m_sync)
+        {
+            if (m_current is { Active: true } enc && enc.Has(source.Id))
+            {
+                enc.Get(source).Miss(skill);
+            }
+        }
+    }
+
+    // The HP an enemy has left (00 8D). Only bosses of the running fight are kept, for the chart.
+    public void EnemyHp(DateTime time, int entityId, long hp)
+    {
+        lock (m_sync)
+        {
+            if (m_current is { Active: true } enc)
+            {
+                enc.BossHp(time, entityId, hp);
+            }
+        }
+    }
+
     // attackerId: the enemy that hit, when known (keeps the clock running while it lives).
-    public void DamageTaken(DateTime time, PlayerRef target, long amount, int? attackerId = null, bool tick = false, bool sure = true)
+    // detail: whether the hit was blocked or parried (direct hits only).
+    public void DamageTaken(DateTime time, PlayerRef target, long amount, int? attackerId = null, bool tick = false, bool sure = true, HitDetail detail = default)
     {
         lock (m_sync)
         {
@@ -110,7 +138,7 @@ public sealed class EncounterTracker
             {
                 if (m_current is { Active: true } fight && attackerId is int enemy && fight.IsEnemy(enemy))
                 {
-                    fight.Get(target).DamageTaken += amount;
+                    fight.Get(target).Taken(amount, tick, detail);
                     fight.Touch(enemy, time);
                 }
 
@@ -124,7 +152,7 @@ public sealed class EncounterTracker
             }
 
             Encounter enc = this.BeginOrContinue(time);
-            enc.Get(target).DamageTaken += amount;
+            enc.Get(target).Taken(amount, tick, detail);
             if (!dead)
             {
                 enc.Engage(attackerId, time);
@@ -188,7 +216,7 @@ public sealed class EncounterTracker
     // target are null when they are not one of ours: a stranger's heal on us still counts
     // as healing taken, without the stranger showing up. Someone only maybe ours counts
     // once they are in the fight.
-    public void Healing(DateTime time, PlayerRef? healer, PlayerRef? target, long amount, bool healerSure = true, bool targetSure = true)
+    public void Healing(DateTime time, PlayerRef? healer, PlayerRef? target, long amount, bool healerSure = true, bool targetSure = true, int skill = 0, bool crit = false, bool tick = false)
     {
         lock (m_sync)
         {
@@ -199,7 +227,7 @@ public sealed class EncounterTracker
 
             if (healer is { } h && (healerSure || enc.Has(h.Id)))
             {
-                enc.Get(h).Healed += amount;
+                enc.Get(h).Add(time - enc.Start, amount, skill, new HitDetail { Crit = crit }, heal: true, tick);
             }
 
             if (target is { } t && (targetSure || enc.Has(t.Id)))
@@ -260,6 +288,19 @@ public sealed class EncounterTracker
 
     public EncounterSnapshot? Current => this.CurrentAt(DateTime.Now);
 
+    // The current fight with skills and the per-second values (the details view); costs
+    // more than Current, so only while the details are shown.
+    public EncounterSnapshot? CurrentDetailed
+    {
+        get
+        {
+            lock (m_sync)
+            {
+                return m_current?.Active == true ? m_current.Snapshot(DateTime.Now, details: true) : m_lastFinished;
+            }
+        }
+    }
+
     // Enemies that keep the current fight's clock running (for --replay).
     internal int[] Engaged()
     {
@@ -274,7 +315,7 @@ public sealed class EncounterTracker
     {
         lock (m_sync)
         {
-            return m_current?.Active == true ? m_current.Snapshot(now) : m_lastFinished;
+            return m_current?.Active == true ? m_current.Snapshot(now, details: false) : m_lastFinished;
         }
     }
 
@@ -316,19 +357,23 @@ public sealed class EncounterTracker
         }
     }
 
-    public EncounterSnapshot? GetOverall()
+    // bossesOnly: only the boss fights, the numbers people compare (the default setting).
+    // Null when there is nothing to sum yet.
+    public EncounterSnapshot? GetOverall(bool bossesOnly = false)
     {
         lock (m_sync)
         {
             if (m_past.Count == 0)
             {
-                return this.Current;
+                return bossesOnly ? null : this.Current;
             }
 
-            if (m_overall is null || m_overallCount != m_past.Count)
+            if (m_overall is null || m_overallCount != m_past.Count || m_overallBosses != bossesOnly)
             {
-                m_overall = EncounterSnapshot.BuildOverall(m_past);
+                List<EncounterSnapshot> fights = bossesOnly ? m_past.Where(f => f.IsBoss).ToList() : m_past;
+                m_overall = fights.Count == 0 ? null : EncounterSnapshot.BuildOverall(fights, bossesOnly ? "Overall (bosses)" : "Overall");
                 m_overallCount = m_past.Count;
+                m_overallBosses = bossesOnly;
             }
 
             return m_overall;
@@ -368,7 +413,7 @@ public sealed class EncounterTracker
     {
         enc.Active = false;
         enc.Pause(enc.LastCombat);
-        EncounterSnapshot snap = enc.Snapshot(enc.LastCombat);
+        EncounterSnapshot snap = enc.Snapshot(enc.LastCombat, details: true);
         m_lastFinished = snap;
         if (snap.Combatants.Any(c => c.DamageTotal > 0))
         {
@@ -384,12 +429,153 @@ public sealed class EncounterTracker
 
     private sealed class Totals
     {
+        // The chart covers an hour (the longest dungeon run); later seconds add to the last.
+        private const int MaxSeconds = 3600;
+
+        private readonly Dictionary<(int Skill, bool Heal), Skill> m_skills = new();
+        private readonly List<float> m_damage = new();
+        private readonly List<float> m_heal = new();
+
         public PlayerRef Player;
         public long Damage;
         public long DamageTaken;
         public long Healed;
         public long HealingTaken;
         public int Deaths;
+        public int HitsTaken;
+        public int Blocks;
+        public int Parries;
+
+        public void Add(TimeSpan at, long amount, int skill, HitDetail d, bool heal, bool tick)
+        {
+            if (heal)
+            {
+                this.Healed += amount;
+            }
+            else
+            {
+                this.Damage += amount;
+            }
+
+            List<float> line = heal ? m_heal : m_damage;
+            int second = Math.Clamp((int)at.TotalSeconds, 0, MaxSeconds - 1);
+            while (line.Count <= second)
+            {
+                line.Add(0f);
+            }
+
+            line[second] += amount;
+
+            Skill s = this.SkillOf(skill, heal);
+            s.Amount += amount;
+            s.MaxHit = Math.Max(s.MaxHit, amount);
+            if (tick)
+            {
+                s.Ticks++;
+                return;
+            }
+
+            s.Hits++;
+            s.Crits += d.Crit ? 1 : 0;
+            s.Backs += d.Back ? 1 : 0;
+            s.Fronts += d.Front ? 1 : 0;
+            s.Doubles += d.Double ? 1 : 0;
+            s.Perfects += d.Perfect ? 1 : 0;
+            s.Multis += d.Multi ? 1 : 0;
+        }
+
+        public void Miss(int skill)
+        {
+            Skill s = this.SkillOf(skill, heal: false);
+            s.Hits++;
+            s.Misses++;
+        }
+
+        public void Taken(long amount, bool tick, HitDetail d)
+        {
+            this.DamageTaken += amount;
+            if (!tick)
+            {
+                this.HitsTaken++;
+                this.Blocks += d.Block ? 1 : 0;
+                this.Parries += d.Parry ? 1 : 0;
+            }
+        }
+
+        // A summon's numbers, folded into its owner.
+        public void Absorb(Totals summon)
+        {
+            this.Damage += summon.Damage;
+            this.Healed += summon.Healed;
+            foreach ((var key, Skill s) in summon.m_skills)
+            {
+                this.SkillOf(key.Skill, key.Heal).Absorb(s);
+            }
+
+            AddLine(m_damage, summon.m_damage);
+            AddLine(m_heal, summon.m_heal);
+        }
+
+        public List<SkillTotals> Skills() => m_skills
+            .Select(kv => new SkillTotals(kv.Key.Skill, kv.Key.Heal, kv.Value.Amount, kv.Value.Hits, kv.Value.MaxHit, kv.Value.Crits, kv.Value.Backs, kv.Value.Fronts, kv.Value.Doubles, kv.Value.Perfects, kv.Value.Multis, kv.Value.Misses, kv.Value.Ticks))
+            .ToList();
+
+        public float[] DamageLine() => m_damage.ToArray();
+
+        public float[] HealLine() => m_heal.ToArray();
+
+        private Skill SkillOf(int skill, bool heal)
+        {
+            if (!m_skills.TryGetValue((skill, heal), out Skill? s))
+            {
+                m_skills[(skill, heal)] = s = new Skill();
+            }
+
+            return s;
+        }
+
+        private static void AddLine(List<float> into, List<float> from)
+        {
+            while (into.Count < from.Count)
+            {
+                into.Add(0f);
+            }
+
+            for (int i = 0; i < from.Count; i++)
+            {
+                into[i] += from[i];
+            }
+        }
+
+        private sealed class Skill
+        {
+            public long Amount;
+            public int Hits;
+            public long MaxHit;
+            public int Crits;
+            public int Backs;
+            public int Fronts;
+            public int Doubles;
+            public int Perfects;
+            public int Multis;
+            public int Misses;
+            public int Ticks;
+
+            public void Absorb(Skill o)
+            {
+                this.Amount += o.Amount;
+                this.Hits += o.Hits;
+                this.MaxHit = Math.Max(this.MaxHit, o.MaxHit);
+                this.Crits += o.Crits;
+                this.Backs += o.Backs;
+                this.Fronts += o.Fronts;
+                this.Doubles += o.Doubles;
+                this.Perfects += o.Perfects;
+                this.Multis += o.Multis;
+                this.Misses += o.Misses;
+                this.Ticks += o.Ticks;
+            }
+        }
     }
 
     private sealed class Encounter(DateTime start)
@@ -400,8 +586,12 @@ public sealed class EncounterTracker
         private readonly HashSet<int> m_enemies = new();              // every enemy of this fight
         private readonly HashSet<int> m_bosses = new();
         private readonly HashSet<int> m_deadBosses = new();
+        private readonly Dictionary<int, (long Full, List<float> Left)> m_bossHp = new(); // per second
         private double m_pausedSeconds;
         private DateTime? m_runningSince = start;
+
+        // When the fight began: second 0 of its chart.
+        public DateTime Start { get; } = start;
 
         public DateTime LastCombat { get; private set; } = start;
         public bool Active { get; set; } = true;
@@ -537,12 +727,45 @@ public sealed class EncounterTracker
                 return;
             }
 
-            Totals o = this.Get(owner);
-            o.Damage += s.Damage;
-            o.Healed += s.Healed;
+            this.Get(owner).Absorb(s);
         }
 
-        public EncounterSnapshot Snapshot(DateTime now)
+        // A boss's HP left, as a fraction of the most it was seen with (HamMeter may start
+        // after the pull), kept per second; seconds without news repeat the last value.
+        public void BossHp(DateTime time, int entityId, long hp)
+        {
+            if (!m_bosses.Contains(entityId) || hp < 0)
+            {
+                return;
+            }
+
+            if (!m_bossHp.TryGetValue(entityId, out var b))
+            {
+                b = (hp, new List<float>());
+            }
+
+            long full = Math.Max(b.Full, hp);
+            int second = Math.Clamp((int)(time - this.Start).TotalSeconds, 0, 3599);
+            float last = b.Left.Count > 0 ? b.Left[^1] : 1f;
+            while (b.Left.Count < second)
+            {
+                b.Left.Add(last);
+            }
+
+            float left = full > 0 ? (float)hp / full : 0f;
+            if (b.Left.Count == second)
+            {
+                b.Left.Add(left);
+            }
+            else
+            {
+                b.Left[second] = left;
+            }
+
+            m_bossHp[entityId] = (full, b.Left);
+        }
+
+        public EncounterSnapshot Snapshot(DateTime now, bool details)
         {
             double seconds = this.Seconds(now);
             double rate = Math.Max(1, seconds);
@@ -555,12 +778,21 @@ public sealed class EncounterTracker
                 .Select(t => t.Value.Name)
                 .FirstOrDefault() ?? string.Empty;
 
+            // The chart shows the boss that took the most damage.
+            IReadOnlyList<float> bossHp = [];
+            if (details && m_bossHp.Count > 0)
+            {
+                int main = m_bossHp.Keys.OrderByDescending(id => m_targets.TryGetValue(id, out var t) ? t.Damage : 0).First();
+                bossHp = m_bossHp[main].Left.ToArray();
+            }
+
             return new EncounterSnapshot
             {
                 Title = string.IsNullOrEmpty(title) ? "Encounter" : title,
                 IsBoss = this.HasBoss,
                 Seconds = seconds,
                 Active = this.Active,
+                BossHp = bossHp,
                 Combatants = m_players.Values.Select(t => new Combatant
                 {
                     Id = t.Player.Id,
@@ -574,6 +806,12 @@ public sealed class EncounterTracker
                     DeathCount = t.Deaths,
                     Dps = (float)(t.Damage / rate),
                     Hps = (float)(t.Healed / rate),
+                    HitsTaken = t.HitsTaken,
+                    Blocks = t.Blocks,
+                    Parries = t.Parries,
+                    Skills = details ? t.Skills() : [],
+                    DamagePerSecond = details ? t.DamageLine() : [],
+                    HealPerSecond = details ? t.HealLine() : [],
                 }).ToList(),
             };
         }
