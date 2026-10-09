@@ -250,18 +250,20 @@ public sealed class DetailWindow
         List<SkillRow> rows = SkillDetails.Rows(me, m_heal, language);
         ImDrawListPtr dl = ImGui.GetWindowDrawList();
         float width = this.S(Width), rowH = this.S(RowH), body = this.S(BaseText), head = this.S(11.5f);
+        float cols = width - this.S(14f);
 
-        // Column x positions as fractions of the width; numbers are right-aligned at them.
-        const float barStart = 0.31f, barEnd = 0.54f, value = 0.64f, share = 0.73f, hits = 0.81f, crit = 0.88f, back = 0.94f, avg = 0.988f;
+        // Column x positions as fractions of `cols`, numbers right-aligned at them. Titles and
+        // rows share `cols`, the width left of the list's scrollbar, so they line up.
+        const float barStart = 0.31f, barEnd = 0.52f, value = 0.62f, share = 0.71f, hits = 0.785f, crit = 0.86f, back = 0.93f, avg = 1f;
         Vector2 p = ImGui.GetCursorScreenPos();
         uint muted = Col(Theme.Muted);
         this.Text(dl, new Vector2(p.X + this.S(8f), p.Y), "SKILL", head, muted);
-        this.Text(dl, new Vector2(p.X + (barStart * width), p.Y), m_heal ? "HEALING" : "DAMAGE", head, muted);
-        this.RightText(dl, p, share, "SHARE", head, muted, width);
-        this.RightText(dl, p, hits, "HITS", head, muted, width);
-        this.RightText(dl, p, crit, "CRIT", head, muted, width);
-        this.RightText(dl, p, back, "BACK", head, muted, width);
-        this.RightText(dl, p, avg, "AVG", head, muted, width);
+        this.Text(dl, new Vector2(p.X + (barStart * cols), p.Y), m_heal ? "HEALING" : "DAMAGE", head, muted);
+        this.RightText(dl, p, share, "SHARE", head, muted, cols);
+        this.RightText(dl, p, hits, "HITS", head, muted, cols);
+        this.RightText(dl, p, crit, "CRIT", head, muted, cols);
+        this.RightText(dl, p, back, "BACK", head, muted, cols);
+        this.RightText(dl, p, avg, "AVG", head, muted, cols);
         ImGui.Dummy(new Vector2(width, head + this.S(2f)));
 
         Vector2 listSize = new(width, Math.Max(1, Math.Min(rows.Count, VisibleRows)) * rowH);
@@ -289,20 +291,20 @@ public sealed class DetailWindow
                 }
 
                 float ty = at.Y + ((rowH - 2f - body) / 2f);
-                this.Text(cl, new Vector2(at.X + this.S(8f), ty), this.Fit(r.Name, (barStart * w) - this.S(16f), body), body, Col(Theme.Text));
+                this.Text(cl, new Vector2(at.X + this.S(8f), ty), this.Fit(r.Name, (barStart * cols) - this.S(16f), body), body, Col(Theme.Text));
                 float barH = this.S(8f);
-                Vector2 barMin = new(at.X + (barStart * w), at.Y + ((rowH - 2f - barH) / 2f));
-                float barW = (barEnd - barStart) * w;
+                Vector2 barMin = new(at.X + (barStart * cols), at.Y + ((rowH - 2f - barH) / 2f));
+                float barW = (barEnd - barStart) * cols;
                 cl.AddRectFilled(barMin, barMin + new Vector2(barW, barH), Col(Theme.Track), 4f);
                 cl.AddRectFilled(barMin, barMin + new Vector2(barW * r.Amount / top, barH), Col(color), 4f);
                 Vector2 row = new(at.X, ty);
-                this.RightText(cl, row, value, Fmt(r.Amount), body, Col(Theme.Text), w);
-                this.RightText(cl, row, share, Percent(r.Share, 1), body, muted, w);
-                this.RightText(cl, row, hits, (r.Hits + r.Ticks).ToString(CultureInfo.InvariantCulture), body, Col(Theme.Text), w);
-                this.RightText(cl, row, crit, Percent(r.Crit), body, Col(Theme.Text), w);
-                this.RightText(cl, row, back, Percent(r.Back), body, Col(Theme.Text), w);
+                this.RightText(cl, row, value, Fmt(r.Amount), body, Col(Theme.Text), cols);
+                this.RightText(cl, row, share, Percent(r.Share, 1), body, muted, cols);
+                this.RightText(cl, row, hits, (r.Hits + r.Ticks).ToString(CultureInfo.InvariantCulture), body, Col(Theme.Text), cols);
+                this.RightText(cl, row, crit, Percent(r.Crit), body, Col(Theme.Text), cols);
+                this.RightText(cl, row, back, Percent(r.Back), body, Col(Theme.Text), cols);
                 int count = r.Hits + r.Ticks;
-                this.RightText(cl, row, avg, count > 0 ? Fmt(r.Amount / count) : "—", body, muted, w);
+                this.RightText(cl, row, avg, count > 0 ? Fmt(r.Amount / count) : "—", body, muted, cols);
                 if (hovered)
                 {
                     Widgets.Tooltip($"Biggest hit {Fmt(r.MaxHit)}" + (r.Ticks > 0 ? $"\n{r.Ticks} ticks over time" : string.Empty));
