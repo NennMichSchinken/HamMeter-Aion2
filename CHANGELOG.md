@@ -11,6 +11,7 @@ Format (read by HamMeter's "What's new" and the update popup, keep it this way):
 - New: "Details" opens a window with every skill, the hit rates (crit, back, front, double, perfect, multi hit; the same numbers as the game's damage analyzer) and a chart of DPS or healing over the fight, with your party and the boss's HP.
 - New: Skill names in German or English (Settings → Display).
 - New: Overall sums only the boss fights, the numbers to compare (Settings → Display, on by default).
+- Fixed: Russian names show in full instead of "?????".
 
 ## 0.3.1 - 2026-10-09
 - New: Every new dungeon run starts with an empty meter and history. Porting out and back in during a run keeps your fights (Settings → Display, on by default).
