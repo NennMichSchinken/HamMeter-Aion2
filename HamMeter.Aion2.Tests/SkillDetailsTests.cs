@@ -118,6 +118,23 @@ public class SkillDetailsTests
         Assert.Equal((4_000L, 2, 0.5f), (rows[0].Amount, rows[0].Hits, rows[0].Crit));
     }
 
+    // Uneven dash sizes (the chart scaled to the text size) once froze the overlay: the
+    // dashes must always come to an end and cover about dash / (dash + gap) of the line.
+    [Fact]
+    public void Dashes_FinishAtUnevenSizes_OnALongJaggedLine()
+    {
+        var rng = new Random(7);
+        System.Numerics.Vector2[] line = Enumerable.Range(0, 3600)
+            .Select(i => new System.Numerics.Vector2(i * 0.19f, rng.NextSingle() * 171.43f))
+            .ToArray();
+
+        var dashes = DetailWindow.DashSegments(line, 6.857f, 4.571f);
+
+        float total = line.Zip(line.Skip(1), System.Numerics.Vector2.Distance).Sum();
+        float drawn = dashes.Sum(d => System.Numerics.Vector2.Distance(d.From, d.To));
+        Assert.InRange(drawn / total, 0.55f, 0.65f);
+    }
+
     [Fact]
     public void Smooth_AveragesTheLastFiveSeconds()
     {

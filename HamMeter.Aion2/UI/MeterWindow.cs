@@ -506,14 +506,17 @@ public sealed class MeterWindow
     // button to the details window.
     private void DrawExpanded(Combatant c, Vector4 color, float width)
     {
-        const float line = 19f, pad = 8f, indent = 12f, size = 13f;
+        // As big as the names on the bars; the rest grows with it.
+        float size = m_config.LeftTextSize;
+        float k = size / 13f;
+        float line = 19f * k, pad = 8f * k, indent = 12f * k;
         string language = m_config.SkillLanguage ?? Game.SkillNames.DefaultLanguage();
         List<SkillRow> rows = SkillDetails.Rows(c, m_metric == Metric.HealingDone, language).Take(5).ToList();
         HitRates rates = SkillDetails.Rates(c);
 
         ImDrawListPtr dl = ImGui.GetWindowDrawList();
         Vector2 pos = ImGui.GetCursorScreenPos();
-        float h = pad + 22f + (Math.Max(1, rows.Count) * line) + pad;
+        float h = pad + (24f * k) + (Math.Max(1, rows.Count) * line) + pad;
         Vector2 min = new(pos.X + indent, pos.Y);
         Vector2 max = new(pos.X + width, pos.Y + h);
         dl.AddRectFilled(min, max, Col(new Vector4(0.106f, 0.106f, 0.129f, 0.96f)), 6f);
@@ -521,35 +524,36 @@ public sealed class MeterWindow
 
         uint muted = Col(Theme.Muted);
         uint white = Col(Theme.Text);
-        float x = min.X + 12f;
+        float x = min.X + (12f * k);
         float y = min.Y + pad;
         foreach ((string label, float? v) in new[] { ("Crit", rates.Crit), ("Back", rates.Back), ("Double", rates.Double) })
         {
             this.Text(dl, new Vector2(x, y), label, size, muted, false);
-            x += this.TextW(label, size) + 4f;
+            x += this.TextW(label, size) + (4f * k);
             string s = v is float f ? (f * 100f).ToString("0", CultureInfo.InvariantCulture) + "%" : "—";
             this.Text(dl, new Vector2(x, y), s, size, white, false);
-            x += this.TextW(s, size) + 12f;
+            x += this.TextW(s, size) + (12f * k);
         }
 
         // "Details": opens the window for this player and closes the bar.
         const string label2 = "Details";
-        float bw = this.TextW(label2, size) + 22f;
-        Vector2 bmin = new(max.X - bw - 8f, y - 3f);
+        float bw = this.TextW(label2, size) + (22f * k);
+        float bh = size + (7f * k);
+        Vector2 bmin = new(max.X - bw - (8f * k), y - (3.5f * k));
         ImGui.SetCursorScreenPos(bmin);
-        if (ImGui.InvisibleButton($"##details{c.Id}", new Vector2(bw, 20f)))
+        if (ImGui.InvisibleButton($"##details{c.Id}", new Vector2(bw, bh)))
         {
             m_details.Show(c.Id);
             m_expanded = -1;
         }
 
         bool hovered = ImGui.IsItemHovered();
-        dl.AddRectFilled(bmin, bmin + new Vector2(bw, 20f), Col(hovered ? Theme.AccentHover : Theme.Accent), 6f);
-        this.Text(dl, new Vector2(bmin.X + 11f, bmin.Y + 3f), label2, size, white, false);
+        dl.AddRectFilled(bmin, bmin + new Vector2(bw, bh), Col(hovered ? Theme.AccentHover : Theme.Accent), 6f);
+        this.Text(dl, new Vector2(bmin.X + (11f * k), bmin.Y + ((bh - size) / 2f)), label2, size, white, false);
 
-        float inner = max.X - min.X - 24f;
-        float rx = min.X + 12f;
-        y += 24f;
+        float inner = max.X - min.X - (24f * k);
+        float rx = min.X + (12f * k);
+        y += 26f * k;
         if (rows.Count == 0)
         {
             this.Text(dl, new Vector2(rx, y), "No skill data for this fight.", size, muted, false);
@@ -559,10 +563,10 @@ public sealed class MeterWindow
         foreach (SkillRow r in rows)
         {
             this.Text(dl, new Vector2(rx, y), this.Fit(r.Name, inner * 0.38f, size), size, white, false);
-            Vector2 barMin = new(rx + (inner * 0.40f), y + 6f);
+            Vector2 barMin = new(rx + (inner * 0.40f), y + ((size - (6f * k)) / 2f));
             float barW = inner * 0.30f;
-            dl.AddRectFilled(barMin, new Vector2(barMin.X + barW, barMin.Y + 5f), Col(Theme.Track), 3f);
-            dl.AddRectFilled(barMin, new Vector2(barMin.X + (barW * r.Amount / top), barMin.Y + 5f), Col(color), 3f);
+            dl.AddRectFilled(barMin, new Vector2(barMin.X + barW, barMin.Y + (6f * k)), Col(Theme.Track), 3f);
+            dl.AddRectFilled(barMin, new Vector2(barMin.X + (barW * r.Amount / top), barMin.Y + (6f * k)), Col(color), 3f);
             string amount = this.Fmt(r.Amount);
             this.Text(dl, new Vector2(rx + (inner * 0.86f) - this.TextW(amount, size), y), amount, size, white, false);
             string crit = r.Crit is float cr ? (cr * 100f).ToString("0", CultureInfo.InvariantCulture) + "%" : "—";

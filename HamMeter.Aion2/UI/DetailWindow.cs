@@ -9,9 +9,12 @@ namespace HamMeter.UI;
 // The skill details of one player in the fight the meter shows: hit rates, the skills and
 // a chart of DPS or healing over the fight, with the party and the boss's HP. Opened from
 // the "Details" button of an expanded bar; a click on another bar or on a name at the top
-// switches the player.
+// switches the player. Everything scales with the bar names' text size: the body text is
+// as big as the names on the bars.
 public sealed class DetailWindow
 {
+    // Sizes at a body text of 14 px; multiplied by the scale (see S).
+    private const float BaseText = 14f;
     private const float Width = 640f;
     private const float RowH = 26f;
     private const int VisibleRows = 6;
@@ -29,6 +32,7 @@ public sealed class DetailWindow
     private bool m_hasAnchor;
     private bool m_heal;
     private bool m_showParty = true;
+    private float m_scale = 1f;
 
     // classColor: the bar colour of a class, as the meter draws it.
     public DetailWindow(Config config, Func<string, IntPtr> classIcon, Func<string, Vector4> classColor)
@@ -66,14 +70,16 @@ public sealed class DetailWindow
             return;
         }
 
+        m_scale = Math.Clamp(m_config.LeftTextSize / BaseText, 0.8f, 2f);
         Combatant me = fight.Combatants.FirstOrDefault(c => c.Id == this.PlayerId) ?? fight.Combatants.OrderByDescending(c => c.DamageTotal).First();
         this.PlayerId = me.Id;
 
+        float width = this.S(Width);
         Vector2 disp = ImGui.GetIO().DisplaySize;
         float x = m_anchorPos.X + m_anchorSize.X + 8f;
-        if (x + Width + 32f > disp.X)
+        if (x + width + 32f > disp.X)
         {
-            x = m_anchorPos.X - 8f - Width - 32f;
+            x = m_anchorPos.X - 8f - width - 32f;
         }
 
         ImGui.SetNextWindowPos(new Vector2(Math.Max(0f, x), Math.Max(0f, m_anchorPos.Y)), ImGuiCond.FirstUseEver);
@@ -86,8 +92,8 @@ public sealed class DetailWindow
         ImGui.PushStyleColor(ImGuiCol.ScrollbarGrabActive, Theme.Accent);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, 12f);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 1f);
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(16f, 14f));
-        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(0f, 12f));
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(this.S(16f), this.S(14f)));
+        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(0f, this.S(12f)));
         ImGui.PushStyleVar(ImGuiStyleVar.ScrollbarSize, 8f);
         ImGui.PushStyleVar(ImGuiStyleVar.ScrollbarRounding, 6f);
 
@@ -97,7 +103,7 @@ public sealed class DetailWindow
         {
             this.DrawHeader(fight, me);
             this.DrawTabs(fight);
-            DrawRates(SkillDetails.Rates(me));
+            this.DrawRates(SkillDetails.Rates(me));
             this.DrawSkills(me);
             this.DrawChart(fight, me);
 
@@ -117,55 +123,59 @@ public sealed class DetailWindow
     {
         ImDrawListPtr dl = ImGui.GetWindowDrawList();
         Vector2 p = ImGui.GetCursorScreenPos();
-        const float h = 40f;
+        float width = this.S(Width);
+        float icon = this.S(38f);
 
-        IntPtr icon = m_classIcon(me.Job);
-        if (icon != IntPtr.Zero)
+        IntPtr tex = m_classIcon(me.Job);
+        if (tex != IntPtr.Zero)
         {
-            dl.AddImage(icon, p + new Vector2(0f, 2f), p + new Vector2(36f, 38f));
+            dl.AddImage(tex, p, p + new Vector2(icon, icon));
         }
         else
         {
-            dl.AddRectFilled(p + new Vector2(0f, 2f), p + new Vector2(36f, 38f), Col(m_classColor(me.Job)), 8f);
+            dl.AddRectFilled(p, p + new Vector2(icon, icon), Col(m_classColor(me.Job)), 8f);
         }
 
-        float tx = p.X + 46f;
-        Text(dl, new Vector2(tx, p.Y), me.Name, 19f, Col(Theme.Text));
+        float tx = p.X + icon + this.S(10f);
+        float big = this.S(19f), small = this.S(14f);
+        this.Text(dl, new Vector2(tx, p.Y - this.S(1f)), me.Name, big, Col(Theme.Text));
         string role = (ClassInfo.IsKnown(me.Job) ? ClassInfo.FullName(me.Job) : "Unknown class") + (me.IsUser ? " · you" : string.Empty);
-        Text(dl, new Vector2(tx + TextW(me.Name, 19f) + 8f, p.Y + 4f), role, 14f, Col(Theme.Muted));
-        Text(dl, new Vector2(tx, p.Y + 23f), $"{fight.Title}{(fight.IsBoss ? " (boss)" : string.Empty)} · {fight.Duration}", 14f, Col(Theme.Muted));
+        this.Text(dl, new Vector2(tx + this.TextW(me.Name, big) + this.S(8f), p.Y + this.S(3f)), role, small, Col(Theme.Muted));
+        this.Text(dl, new Vector2(tx, p.Y + this.S(22f)), $"{fight.Title}{(fight.IsBoss ? " (boss)" : string.Empty)} · {fight.Duration}", small, Col(Theme.Muted));
 
         // Close button, top right.
-        Vector2 closeMin = new(p.X + Width - 24f, p.Y + 2f);
+        float cb = this.S(24f);
+        Vector2 closeMin = new(p.X + width - cb, p.Y);
         ImGui.SetCursorScreenPos(closeMin);
-        bool closeClicked = ImGui.InvisibleButton("##close", new Vector2(24f, 24f));
+        bool closeClicked = ImGui.InvisibleButton("##close", new Vector2(cb, cb));
         bool closeHovered = ImGui.IsItemHovered();
         if (closeHovered)
         {
-            dl.AddRectFilled(closeMin, closeMin + new Vector2(24f, 24f), Col(Theme.FrameHover), 6f);
+            dl.AddRectFilled(closeMin, closeMin + new Vector2(cb, cb), Col(Theme.FrameHover), 6f);
         }
 
-        Icons.Draw(dl, Icon.Close, closeMin + new Vector2(4f, 4f), 16f, Col(closeHovered ? Theme.Text : Theme.Muted));
+        Icons.Draw(dl, Icon.Close, closeMin + new Vector2(cb * 0.18f, cb * 0.18f), cb * 0.64f, Col(closeHovered ? Theme.Text : Theme.Muted));
         if (closeClicked)
         {
             this.Close();
         }
 
         // Totals, right-aligned before the close button.
-        float right = p.X + Width - 40f;
+        float right = p.X + width - cb - this.S(16f);
+        float label = this.S(12f), value = this.S(19f);
         (string label, string value)[] stats = m_heal
             ? [("Healing", Fmt(me.HealedTotal)), ("HPS", Fmt(me.Hps))]
             : [("Damage", Fmt(me.DamageTotal)), ("DPS", Fmt(me.Dps))];
         for (int i = stats.Length - 1; i >= 0; i--)
         {
-            float w = MathF.Max(TextW(stats[i].value, 18f), TextW(stats[i].label, 12f));
-            Text(dl, new Vector2(right - TextW(stats[i].label, 12f), p.Y + 1f), stats[i].label, 12f, Col(Theme.Muted));
-            Text(dl, new Vector2(right - TextW(stats[i].value, 18f), p.Y + 17f), stats[i].value, 18f, Col(Theme.Text));
-            right -= w + 22f;
+            float w = MathF.Max(this.TextW(stats[i].value, value), this.TextW(stats[i].label, label));
+            this.Text(dl, new Vector2(right - this.TextW(stats[i].label, label), p.Y), stats[i].label, label, Col(Theme.Muted));
+            this.Text(dl, new Vector2(right - this.TextW(stats[i].value, value), p.Y + this.S(16f)), stats[i].value, value, Col(Theme.Text));
+            right -= w + this.S(22f);
         }
 
         ImGui.SetCursorScreenPos(p);
-        ImGui.Dummy(new Vector2(Width, h));
+        ImGui.Dummy(new Vector2(width, icon));
     }
 
     // Every player of the fight; a click shows that player.
@@ -174,17 +184,18 @@ public sealed class DetailWindow
         ImDrawListPtr dl = ImGui.GetWindowDrawList();
         Vector2 start = ImGui.GetCursorScreenPos();
         Vector2 at = start;
-        const float h = 28f;
+        float width = this.S(Width);
+        float h = this.S(30f), name = this.S(BaseText), amountSize = this.S(13f);
         IEnumerable<Combatant> players = fight.Combatants
             .Where(c => (m_heal ? c.HealedTotal : c.DamageTotal) > 0 || c.Id == this.PlayerId)
             .OrderByDescending(c => m_heal ? c.HealedTotal : c.DamageTotal);
         foreach (Combatant c in players)
         {
             string amount = Fmt(m_heal ? c.HealedTotal : c.DamageTotal);
-            float w = 12f + 8f + 6f + TextW(c.Name, 14f) + 6f + TextW(amount, 13f) + 12f;
-            if (at.X + w > start.X + Width)
+            float w = this.S(26f) + this.TextW(c.Name, name) + this.S(6f) + this.TextW(amount, amountSize) + this.S(12f);
+            if (at.X + w > start.X + width)
             {
-                at = new Vector2(start.X, at.Y + h + 6f);
+                at = new Vector2(start.X, at.Y + h + this.S(6f));
             }
 
             ImGui.SetCursorScreenPos(at);
@@ -197,19 +208,19 @@ public sealed class DetailWindow
             bool hovered = ImGui.IsItemHovered();
             dl.AddRectFilled(at, at + new Vector2(w, h), Col(selected ? Theme.FrameActive : hovered ? Theme.Frame : Vector4.Zero), 7f);
             dl.AddRect(at, at + new Vector2(w, h), Col(selected ? Theme.Accent : Theme.Border), 7f, ImDrawFlags.RoundCornersAll, 1f);
-            dl.AddCircleFilled(at + new Vector2(16f, h / 2f), 4f, Col(m_classColor(c.Job)));
-            float tx = at.X + 26f;
-            Text(dl, new Vector2(tx, at.Y + 6f), c.Name, 14f, Col(Theme.Text));
-            Text(dl, new Vector2(tx + TextW(c.Name, 14f) + 6f, at.Y + 7f), amount, 13f, Col(Theme.Muted));
-            at.X += w + 6f;
+            dl.AddCircleFilled(at + new Vector2(this.S(15f), h / 2f), this.S(4f), Col(m_classColor(c.Job)));
+            float tx = at.X + this.S(26f);
+            this.Text(dl, new Vector2(tx, at.Y + ((h - name) / 2f)), c.Name, name, Col(Theme.Text));
+            this.Text(dl, new Vector2(tx + this.TextW(c.Name, name) + this.S(6f), at.Y + ((h - amountSize) / 2f)), amount, amountSize, Col(Theme.Muted));
+            at.X += w + this.S(6f);
         }
 
         ImGui.SetCursorScreenPos(start);
-        ImGui.Dummy(new Vector2(Width, at.Y - start.Y + h));
+        ImGui.Dummy(new Vector2(width, at.Y - start.Y + h));
     }
 
     // The hit rates as tiles, two rows of four.
-    private static void DrawRates(HitRates r)
+    private void DrawRates(HitRates r)
     {
         (string, float?)[] tiles =
         [
@@ -218,19 +229,18 @@ public sealed class DetailWindow
         ];
         ImDrawListPtr dl = ImGui.GetWindowDrawList();
         Vector2 p = ImGui.GetCursorScreenPos();
-        const float gap = 8f;
-        const float h = 46f;
-        float w = (Width - (3f * gap)) / 4f;
+        float gap = this.S(8f), h = this.S(50f), label = this.S(12f), value = this.S(17f);
+        float w = (this.S(Width) - (3f * gap)) / 4f;
         for (int i = 0; i < tiles.Length; i++)
         {
             Vector2 min = p + new Vector2((i % 4) * (w + gap), (i / 4) * (h + gap));
             dl.AddRectFilled(min, min + new Vector2(w, h), Col(Theme.Frame), 8f);
-            Text(dl, min + new Vector2(10f, 6f), tiles[i].Item1, 12f, Col(Theme.Muted));
+            this.Text(dl, min + new Vector2(this.S(10f), this.S(7f)), tiles[i].Item1, label, Col(Theme.Muted));
             float? v = tiles[i].Item2;
-            Text(dl, min + new Vector2(10f, 22f), Percent(v), 16f, Col(v is null ? Theme.Muted : Theme.Text));
+            this.Text(dl, min + new Vector2(this.S(10f), this.S(24f)), Percent(v), value, Col(v is null ? Theme.Muted : Theme.Text));
         }
 
-        ImGui.Dummy(new Vector2(Width, (2f * h) + gap));
+        ImGui.Dummy(new Vector2(this.S(Width), (2f * h) + gap));
     }
 
     // The skills, biggest first, about six lines; the rest scrolls.
@@ -239,21 +249,22 @@ public sealed class DetailWindow
         string language = m_config.SkillLanguage ?? SkillNames.DefaultLanguage();
         List<SkillRow> rows = SkillDetails.Rows(me, m_heal, language);
         ImDrawListPtr dl = ImGui.GetWindowDrawList();
+        float width = this.S(Width), rowH = this.S(RowH), body = this.S(BaseText), head = this.S(11.5f);
 
         // Column x positions as fractions of the width; numbers are right-aligned at them.
-        const float barStart = 0.31f, barEnd = 0.54f, value = 0.64f, share = 0.73f, hits = 0.81f, crit = 0.88f, back = 0.94f, avg = 1f;
+        const float barStart = 0.31f, barEnd = 0.54f, value = 0.64f, share = 0.73f, hits = 0.81f, crit = 0.88f, back = 0.94f, avg = 0.988f;
         Vector2 p = ImGui.GetCursorScreenPos();
         uint muted = Col(Theme.Muted);
-        Text(dl, p, "SKILL", 11f, muted);
-        Text(dl, new Vector2(p.X + (barStart * Width), p.Y), m_heal ? "HEALING" : "DAMAGE", 11f, muted);
-        RightText(dl, p, share, "SHARE", 11f, muted);
-        RightText(dl, p, hits, "HITS", 11f, muted);
-        RightText(dl, p, crit, "CRIT", 11f, muted);
-        RightText(dl, p, back, "BACK", 11f, muted);
-        RightText(dl, p, avg - 0.012f, "AVG", 11f, muted);
-        ImGui.Dummy(new Vector2(Width, 14f));
+        this.Text(dl, new Vector2(p.X + this.S(8f), p.Y), "SKILL", head, muted);
+        this.Text(dl, new Vector2(p.X + (barStart * width), p.Y), m_heal ? "HEALING" : "DAMAGE", head, muted);
+        this.RightText(dl, p, share, "SHARE", head, muted, width);
+        this.RightText(dl, p, hits, "HITS", head, muted, width);
+        this.RightText(dl, p, crit, "CRIT", head, muted, width);
+        this.RightText(dl, p, back, "BACK", head, muted, width);
+        this.RightText(dl, p, avg, "AVG", head, muted, width);
+        ImGui.Dummy(new Vector2(width, head + this.S(2f)));
 
-        Vector2 listSize = new(Width, Math.Max(1, Math.Min(rows.Count, VisibleRows)) * RowH);
+        Vector2 listSize = new(width, Math.Max(1, Math.Min(rows.Count, VisibleRows)) * rowH);
         ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, Vector2.Zero);
         if (ImGui.BeginChild("##skills", listSize))
         {
@@ -270,26 +281,28 @@ public sealed class DetailWindow
             {
                 SkillRow r = rows[i];
                 Vector2 at = ImGui.GetCursorScreenPos();
-                ImGui.Dummy(new Vector2(w, RowH));
+                ImGui.Dummy(new Vector2(w, rowH));
                 bool hovered = ImGui.IsItemHovered();
                 if (hovered || i == 0)
                 {
-                    cl.AddRectFilled(at, at + new Vector2(w, RowH - 2f), Col(hovered ? Theme.Frame : new Vector4(0.122f, 0.122f, 0.153f, 1f)), 6f);
+                    cl.AddRectFilled(at, at + new Vector2(w, rowH - 2f), Col(hovered ? Theme.Frame : new Vector4(0.122f, 0.122f, 0.153f, 1f)), 6f);
                 }
 
-                float ty = at.Y + ((RowH - 2f - 14f) / 2f);
-                Text(cl, new Vector2(at.X + 8f, ty), Fit(r.Name, (barStart * w) - 16f, 14f), 14f, Col(Theme.Text));
-                Vector2 barMin = new(at.X + (barStart * w), at.Y + 9f);
+                float ty = at.Y + ((rowH - 2f - body) / 2f);
+                this.Text(cl, new Vector2(at.X + this.S(8f), ty), this.Fit(r.Name, (barStart * w) - this.S(16f), body), body, Col(Theme.Text));
+                float barH = this.S(8f);
+                Vector2 barMin = new(at.X + (barStart * w), at.Y + ((rowH - 2f - barH) / 2f));
                 float barW = (barEnd - barStart) * w;
-                cl.AddRectFilled(barMin, barMin + new Vector2(barW, 7f), Col(Theme.Track), 4f);
-                cl.AddRectFilled(barMin, barMin + new Vector2(barW * r.Amount / top, 7f), Col(color), 4f);
-                RightText(cl, new Vector2(at.X, ty), value, Fmt(r.Amount), 14f, Col(Theme.Text), w);
-                RightText(cl, new Vector2(at.X, ty), share, Percent(r.Share, 1), 14f, muted, w);
-                RightText(cl, new Vector2(at.X, ty), hits, (r.Hits + r.Ticks).ToString(CultureInfo.InvariantCulture), 14f, Col(Theme.Text), w);
-                RightText(cl, new Vector2(at.X, ty), crit, Percent(r.Crit), 14f, Col(Theme.Text), w);
-                RightText(cl, new Vector2(at.X, ty), back, Percent(r.Back), 14f, Col(Theme.Text), w);
+                cl.AddRectFilled(barMin, barMin + new Vector2(barW, barH), Col(Theme.Track), 4f);
+                cl.AddRectFilled(barMin, barMin + new Vector2(barW * r.Amount / top, barH), Col(color), 4f);
+                Vector2 row = new(at.X, ty);
+                this.RightText(cl, row, value, Fmt(r.Amount), body, Col(Theme.Text), w);
+                this.RightText(cl, row, share, Percent(r.Share, 1), body, muted, w);
+                this.RightText(cl, row, hits, (r.Hits + r.Ticks).ToString(CultureInfo.InvariantCulture), body, Col(Theme.Text), w);
+                this.RightText(cl, row, crit, Percent(r.Crit), body, Col(Theme.Text), w);
+                this.RightText(cl, row, back, Percent(r.Back), body, Col(Theme.Text), w);
                 int count = r.Hits + r.Ticks;
-                RightText(cl, new Vector2(at.X, ty), avg - 0.012f, count > 0 ? Fmt(r.Amount / count) : "—", 14f, muted, w);
+                this.RightText(cl, row, avg, count > 0 ? Fmt(r.Amount / count) : "—", body, muted, w);
                 if (hovered)
                 {
                     Widgets.Tooltip($"Biggest hit {Fmt(r.MaxHit)}" + (r.Ticks > 0 ? $"\n{r.Ticks} ticks over time" : string.Empty));
@@ -307,36 +320,41 @@ public sealed class DetailWindow
     {
         ImDrawListPtr dl = ImGui.GetWindowDrawList();
         Vector2 p = ImGui.GetCursorScreenPos();
+        float width = this.S(Width), chartH = this.S(ChartH), small = this.S(12f), head = this.S(11.5f);
+        float segW = this.S(56f), segH = this.S(28f);
 
         // Controls: DPS / Heal, show party.
-        Text(dl, new Vector2(p.X, p.Y + 6f), "OVER THE FIGHT", 11f, Col(Theme.Muted));
-        float segX = p.X + Width - 230f;
-        if (Segment("##dps", "DPS", !m_heal, new Vector2(segX, p.Y), dl))
+        this.Text(dl, new Vector2(p.X, p.Y + ((segH - head) / 2f)), "OVER THE FIGHT", head, Col(Theme.Muted));
+        float partyW = this.S(120f);
+        float segX = p.X + width - partyW - (2f * segW) - this.S(14f);
+        if (this.Segment("##dps", "DPS", !m_heal, new Vector2(segX, p.Y), segW, segH, dl))
         {
             m_heal = false;
         }
 
-        if (Segment("##heal", "Heal", m_heal, new Vector2(segX + 56f, p.Y), dl))
+        if (this.Segment("##heal", "Heal", m_heal, new Vector2(segX + segW + this.S(4f), p.Y), segW, segH, dl))
         {
             m_heal = true;
         }
 
-        Vector2 boxAt = new(segX + 130f, p.Y + 6f);
+        float box = this.S(14f);
+        Vector2 boxAt = new(p.X + width - partyW + this.S(6f), p.Y + ((segH - box) / 2f));
         ImGui.SetCursorScreenPos(new Vector2(boxAt.X, p.Y));
-        if (ImGui.InvisibleButton("##party", new Vector2(100f, 26f)))
+        if (ImGui.InvisibleButton("##party", new Vector2(partyW - this.S(6f), segH)))
         {
             m_showParty = !m_showParty;
         }
 
-        dl.AddRect(boxAt, boxAt + new Vector2(13f, 13f), Col(Theme.Muted), 3f, ImDrawFlags.RoundCornersAll, 1f);
+        dl.AddRect(boxAt, boxAt + new Vector2(box, box), Col(Theme.Muted), 3f, ImDrawFlags.RoundCornersAll, 1f);
         if (m_showParty)
         {
-            dl.AddRectFilled(boxAt + new Vector2(2f, 2f), boxAt + new Vector2(11f, 11f), Col(Theme.Accent), 2f);
+            dl.AddRectFilled(boxAt + new Vector2(2f, 2f), boxAt + new Vector2(box - 2f, box - 2f), Col(Theme.Accent), 2f);
         }
 
-        Text(dl, boxAt + new Vector2(19f, -1f), "Show party", 13f, Col(Theme.Text));
+        float body = this.S(BaseText);
+        this.Text(dl, new Vector2(boxAt.X + box + this.S(7f), p.Y + ((segH - body) / 2f)), "Show party", body, Col(Theme.Text));
         ImGui.SetCursorScreenPos(p);
-        ImGui.Dummy(new Vector2(Width, 26f));
+        ImGui.Dummy(new Vector2(width, segH));
 
         // The lines.
         var shown = fight.Combatants
@@ -344,34 +362,35 @@ public sealed class DetailWindow
             .Select(c => (c, line: m_heal ? c.HealPerSecond : c.DamagePerSecond))
             .Where(s => s.line.Count > 0)
             .ToList();
-        Vector2 plot = ImGui.GetCursorScreenPos() + new Vector2(44f, 0f);
-        float plotW = Width - 44f;
-        dl.AddRectFilled(plot, plot + new Vector2(plotW, ChartH), Col(PlotBg), 6f);
+        float axis = this.S(48f);
+        Vector2 plot = ImGui.GetCursorScreenPos() + new Vector2(axis, 0f);
+        float plotW = width - axis;
+        dl.AddRectFilled(plot, plot + new Vector2(plotW, chartH), Col(PlotBg), 6f);
         if (shown.Count == 0)
         {
             string empty = fight.Title.StartsWith("Overall", StringComparison.Ordinal) ? "No chart for Overall: pick a fight." : "Nothing to draw yet.";
-            Text(dl, plot + new Vector2((plotW - TextW(empty, 13f)) / 2f, (ChartH / 2f) - 8f), empty, 13f, Col(Theme.Muted));
-            ImGui.Dummy(new Vector2(Width, ChartH + 4f));
+            this.Text(dl, plot + new Vector2((plotW - this.TextW(empty, body)) / 2f, (chartH - body) / 2f), empty, body, Col(Theme.Muted));
+            ImGui.Dummy(new Vector2(width, chartH + 4f));
             return;
         }
 
         int length = Math.Max(2, Math.Max(shown.Max(s => s.line.Count), fight.BossHp.Count));
         var smooth = shown.Select(s => (s.c, ys: SkillDetails.Smooth(s.line, length))).ToList();
         float max = Math.Max(1f, smooth.Max(s => s.ys.Max()));
-        dl.AddLine(plot + new Vector2(0f, ChartH / 2f), plot + new Vector2(plotW, ChartH / 2f), Col(Theme.Border), 1f);
+        dl.AddLine(plot + new Vector2(0f, chartH / 2f), plot + new Vector2(plotW, chartH / 2f), Col(Theme.Border), 1f);
         uint muted = Col(Theme.Muted);
-        RightAt(dl, new Vector2(plot.X - 6f, plot.Y + 2f), Fmt(max), 11f, muted);
-        RightAt(dl, new Vector2(plot.X - 6f, plot.Y + (ChartH / 2f) - 6f), Fmt(max / 2f), 11f, muted);
-        RightAt(dl, new Vector2(plot.X - 6f, plot.Y + ChartH - 14f), "0", 11f, muted);
+        this.RightAt(dl, new Vector2(plot.X - this.S(6f), plot.Y + 2f), Fmt(max), small, muted);
+        this.RightAt(dl, new Vector2(plot.X - this.S(6f), plot.Y + ((chartH - small) / 2f)), Fmt(max / 2f), small, muted);
+        this.RightAt(dl, new Vector2(plot.X - this.S(6f), plot.Y + chartH - small - 2f), "0", small, muted);
 
         Vector2 Point(int i, float v, float top) => new(
             plot.X + (plotW * i / (length - 1)),
-            plot.Y + ChartH - 4f - (v / top * (ChartH - 10f)));
+            plot.Y + chartH - 4f - (v / top * (chartH - 10f)));
 
         if (fight.BossHp.Count > 1)
         {
             Vector2[] boss = fight.BossHp.Select((v, i) => Point(i, v, 1f)).ToArray();
-            Dashed(dl, boss, Col(BossLine), 1.5f, 2f, 4f);
+            Dashed(dl, boss, Col(BossLine), this.S(1.6f), this.S(2f), this.S(4f));
         }
 
         foreach (var (c, ys) in smooth.OrderBy(s => s.c.Id == me.Id))
@@ -380,79 +399,104 @@ public sealed class DetailWindow
             uint col = Col(m_classColor(c.Job));
             if (c.Id == me.Id)
             {
-                dl.AddPolyline(ref pts[0], pts.Length, col, ImDrawFlags.None, 2.5f);
+                dl.AddPolyline(ref pts[0], pts.Length, col, ImDrawFlags.None, this.S(2.6f));
             }
             else
             {
-                Dashed(dl, pts, col, 1.5f, 6f, 4f);
+                Dashed(dl, pts, col, this.S(1.6f), this.S(6f), this.S(4f));
             }
         }
 
-        ImGui.Dummy(new Vector2(Width, ChartH + 2f));
+        ImGui.Dummy(new Vector2(width, chartH + 2f));
 
         // Time and legend.
         Vector2 l = ImGui.GetCursorScreenPos();
-        Text(dl, new Vector2(plot.X, l.Y), "0:00", 12f, muted);
+        this.Text(dl, new Vector2(plot.X, l.Y), "0:00", small, muted);
         string end = EncounterSnapshot.FormatDuration(length - 1);
-        Text(dl, new Vector2(plot.X + plotW - TextW(end, 12f), l.Y), end, 12f, muted);
-        float lx = plot.X + 60f;
+        this.Text(dl, new Vector2(plot.X + plotW - this.TextW(end, small), l.Y), end, small, muted);
+        float lx = plot.X + this.TextW("0:00", small) + this.S(24f);
+        float mid = l.Y + (small / 2f);
         foreach (var (c, _) in smooth.OrderByDescending(s => s.c.Id == me.Id))
         {
-            dl.AddRectFilled(new Vector2(lx, l.Y + 7f), new Vector2(lx + 14f, l.Y + 10f), Col(m_classColor(c.Job)), 1f);
-            Text(dl, new Vector2(lx + 19f, l.Y), c.Name, 12f, Col(Theme.Text));
-            lx += 19f + TextW(c.Name, 12f) + 14f;
+            dl.AddRectFilled(new Vector2(lx, mid - 1.5f), new Vector2(lx + this.S(14f), mid + 1.5f), Col(m_classColor(c.Job)), 1f);
+            this.Text(dl, new Vector2(lx + this.S(19f), l.Y), c.Name, small, Col(Theme.Text));
+            lx += this.S(19f) + this.TextW(c.Name, small) + this.S(14f);
         }
 
         if (fight.BossHp.Count > 1)
         {
-            Dashed(dl, [new Vector2(lx, l.Y + 8f), new Vector2(lx + 14f, l.Y + 8f)], Col(BossLine), 2f, 2f, 3f);
-            Text(dl, new Vector2(lx + 19f, l.Y), "Boss HP", 12f, Col(BossLine));
+            Dashed(dl, [new Vector2(lx, mid), new Vector2(lx + this.S(14f), mid)], Col(BossLine), 2f, 2f, 3f);
+            this.Text(dl, new Vector2(lx + this.S(19f), l.Y), "Boss HP", small, Col(BossLine));
         }
 
-        ImGui.Dummy(new Vector2(Width, 16f));
+        ImGui.Dummy(new Vector2(width, small + 2f));
     }
 
-    private static bool Segment(string id, string label, bool on, Vector2 at, ImDrawListPtr dl)
+    private bool Segment(string id, string label, bool on, Vector2 at, float w, float h, ImDrawListPtr dl)
     {
         ImGui.SetCursorScreenPos(at);
-        bool clicked = ImGui.InvisibleButton(id, new Vector2(52f, 26f));
+        bool clicked = ImGui.InvisibleButton(id, new Vector2(w, h));
         bool hovered = ImGui.IsItemHovered();
-        dl.AddRectFilled(at, at + new Vector2(52f, 26f), Col(on ? Theme.Accent : hovered ? Theme.FrameHover : Theme.Frame), 6f);
-        Text(dl, at + new Vector2((52f - TextW(label, 13f)) / 2f, 5f), label, 13f, Col(Theme.Text));
+        dl.AddRectFilled(at, at + new Vector2(w, h), Col(on ? Theme.Accent : hovered ? Theme.FrameHover : Theme.Frame), 6f);
+        float size = this.S(BaseText);
+        this.Text(dl, at + new Vector2((w - this.TextW(label, size)) / 2f, (h - size) / 2f), label, size, Col(Theme.Text));
         return clicked;
     }
 
-    // A polyline drawn as dashes: `dash` px on, `gap` px off along its length.
-    private static void Dashed(ImDrawListPtr dl, Vector2[] pts, uint col, float thickness, float dash, float gap)
+    // A polyline drawn as dashes: `dash` px on, `gap` px off along its length. Every step
+    // ends either the segment or the current dash/gap, so it always finishes (a version
+    // that kept a running phase with % stalled on float rounding at uneven sizes and froze
+    // the overlay).
+    internal static void Dashed(ImDrawListPtr dl, Vector2[] pts, uint col, float thickness, float dash, float gap)
     {
-        float phase = 0f;
+        foreach ((Vector2 from, Vector2 to) in DashSegments(pts, dash, gap))
+        {
+            dl.AddLine(from, to, col, thickness);
+        }
+    }
+
+    internal static List<(Vector2 From, Vector2 To)> DashSegments(Vector2[] pts, float dash, float gap)
+    {
+        var dashes = new List<(Vector2, Vector2)>();
+        dash = Math.Max(0.5f, dash);
+        gap = Math.Max(0.5f, gap);
+        bool on = true;
+        float left = dash;
         for (int i = 1; i < pts.Length; i++)
         {
             Vector2 a = pts[i - 1];
             Vector2 b = pts[i];
             float len = Vector2.Distance(a, b);
             float t = 0f;
-            while (t < len)
+            while (len - t > 0.01f)
             {
-                float period = dash + gap;
-                float inPeriod = phase % period;
-                float step = inPeriod < dash ? Math.Min(dash - inPeriod, len - t) : Math.Min(period - inPeriod, len - t);
-                if (inPeriod < dash && len > 0f)
+                float step = Math.Min(left, len - t);
+                if (on)
                 {
-                    dl.AddLine(Vector2.Lerp(a, b, t / len), Vector2.Lerp(a, b, (t + step) / len), col, thickness);
+                    dashes.Add((Vector2.Lerp(a, b, t / len), Vector2.Lerp(a, b, (t + step) / len)));
                 }
 
                 t += step;
-                phase += step;
+                left -= step;
+                if (left <= 0.01f)
+                {
+                    on = !on;
+                    left = on ? dash : gap;
+                }
             }
         }
+
+        return dashes;
     }
 
-    private static void RightText(ImDrawListPtr dl, Vector2 row, float at, string s, float size, uint col, float width = Width) =>
-        Text(dl, new Vector2(row.X + (at * width) - TextW(s, size) - 8f, row.Y), s, size, col);
+    // A size at body text 14 px, scaled to the bar names' text size.
+    private float S(float v) => v * m_scale;
 
-    private static void RightAt(ImDrawListPtr dl, Vector2 rightTop, string s, float size, uint col) =>
-        Text(dl, new Vector2(rightTop.X - TextW(s, size), rightTop.Y), s, size, col);
+    private void RightText(ImDrawListPtr dl, Vector2 row, float at, string s, float size, uint col, float width) =>
+        this.Text(dl, new Vector2(row.X + (at * width) - this.TextW(s, size), row.Y), s, size, col);
+
+    private void RightAt(ImDrawListPtr dl, Vector2 rightTop, string s, float size, uint col) =>
+        this.Text(dl, new Vector2(rightTop.X - this.TextW(s, size), rightTop.Y), s, size, col);
 
     private static string Percent(float? v, int decimals = 0) =>
         v is float f ? (f * 100f).ToString(decimals == 0 ? "0" : "0.0", CultureInfo.InvariantCulture) + "%" : "—";
@@ -462,24 +506,24 @@ public sealed class DetailWindow
         : v >= 1000 ? (v / 1000f).ToString("0.0", CultureInfo.InvariantCulture) + "K"
         : v.ToString("0", CultureInfo.InvariantCulture);
 
-    private static void Text(ImDrawListPtr dl, Vector2 pos, string s, float size, uint col) =>
+    private void Text(ImDrawListPtr dl, Vector2 pos, string s, float size, uint col) =>
         dl.AddText(ImGui.GetFont(), size, pos, col, s);
 
-    private static float TextW(string s, float size)
+    private float TextW(string s, float size)
     {
         float baseSize = ImGui.GetFontSize();
         return baseSize > 0 ? ImGui.CalcTextSize(s).X * (size / baseSize) : ImGui.CalcTextSize(s).X;
     }
 
-    private static string Fit(string s, float room, float size)
+    private string Fit(string s, float room, float size)
     {
-        if (TextW(s, size) <= room)
+        if (this.TextW(s, size) <= room)
         {
             return s;
         }
 
         int n = s.Length;
-        while (n > 0 && TextW(s[..n].TrimEnd() + "...", size) > room)
+        while (n > 0 && this.TextW(s[..n].TrimEnd() + "...", size) > room)
         {
             n--;
         }
