@@ -23,6 +23,10 @@ public static class ClassInfo
 
     public const long SpiritClassId = 10;
 
+    // The first two digits of the class's skill codes (the Elementalist's own, not its spirit's).
+    public static int SkillPrefix(string job) =>
+        (int)ById.First(kv => kv.Key != SpiritClassId && kv.Value.Equals(job, StringComparison.OrdinalIgnoreCase)).Key;
+
     public static readonly Dictionary<string, string> Names = new(StringComparer.OrdinalIgnoreCase)
     {
         ["GLA"] = "Gladiator",

@@ -173,6 +173,12 @@ public static class Program
                 {
                     overlay.ShowDetailsPreview(args.Contains("--expanded", StringComparer.OrdinalIgnoreCase));
                 }
+                else if (Array.FindIndex(args, a => a.Equals("--preview-test", StringComparison.OrdinalIgnoreCase)) is int test and >= 0)
+                {
+                    // --preview-test <player id of TestData>: the test fight's details, e.g. for screenshots.
+                    int player = test + 1 < args.Length && int.TryParse(args[test + 1], out int id) ? id : 2;
+                    overlay.ShowTestPreview(player, args.Contains("--expanded", StringComparer.OrdinalIgnoreCase));
+                }
                 else
                 {
                     overlay.ShowSettingsPreview(args.Contains("--preview-list", StringComparer.OrdinalIgnoreCase));
