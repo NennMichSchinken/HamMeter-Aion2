@@ -318,7 +318,7 @@ public class ProtocolTests
         w.VarInt(actor);
         w.U32(skill);
         w.U8(0);
-        w.VarInt(1);
+        w.VarInt(2);        // hit type (2 = normal)
         w.Bytes(3);
         w.Bytes(8);
         w.VarInt(10_000);

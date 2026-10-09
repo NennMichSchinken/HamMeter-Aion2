@@ -69,6 +69,16 @@ public static class Program
             config.TestMode = true;
         }
 
+        // Development: a recording's fights in the meter, with the details window open.
+        int details = Array.FindIndex(args, a => a.Equals("--preview-details", StringComparison.OrdinalIgnoreCase));
+        string? detailsRecording = details >= 0 && details + 1 < args.Length ? args[details + 1] : null;
+        if (detailsRecording is not null)
+        {
+            preview = true;
+            config.TestMode = false;
+            Replay.Load(detailsRecording, tracker);
+        }
+
         var services = new ServiceCollection();
         services.AddLogging(b => b
             .SetMinimumLevel(LogLevel.Information)
@@ -109,7 +119,7 @@ public static class Program
             }
         };
 
-        if (captureError is null)
+        if (captureError is null && detailsRecording is null)
         {
             try
             {
@@ -158,6 +168,10 @@ public static class Program
                 if (args.Contains("--preview-corner", StringComparer.OrdinalIgnoreCase))
                 {
                     overlay.ShowCornerPreview();
+                }
+                else if (detailsRecording is not null)
+                {
+                    overlay.ShowDetailsPreview(args.Contains("--expanded", StringComparer.OrdinalIgnoreCase));
                 }
                 else
                 {

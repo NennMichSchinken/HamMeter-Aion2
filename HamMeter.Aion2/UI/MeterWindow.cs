@@ -31,10 +31,15 @@ public sealed class MeterWindow
     private readonly Func<string?> m_status;
     private readonly Dictionary<int, float> m_animFractions = new();
 
+    private readonly DetailWindow m_details;
+
     private bool m_visible = true;
     private Metric m_metric = Metric.DamageDone;
     private int m_view = -1; // -1 = Current, -2 = Overall, >=0 = past index
     private int m_generation; // the tracker's clears this view has caught up with
+    private int m_expanded = -1; // the player whose bar shows its top skills
+    private int m_pressed = -1;  // the bar the mouse went down on (a click, unless dragged)
+    private Vector2 m_pressedAt;
 
     // classIcon: texture handle for a class tag (IntPtr.Zero when not loaded).
     // status: a message shown instead of the bars when capture isn't running.
@@ -45,6 +50,7 @@ public sealed class MeterWindow
         m_tracker = tracker;
         m_classIcon = classIcon;
         m_status = status;
+        m_details = new DetailWindow(config, classIcon, job => this.BarColor(job, ClassInfo.IsKnown(job)));
     }
 
     // Where the primary monitor starts in overlay coordinates; set by the overlay.
@@ -59,14 +65,34 @@ public sealed class MeterWindow
         set => m_visible = value;
     }
 
+    // Development (--preview-details): the last boss fight of a recording, with the user's
+    // bar expanded or the details window open.
+    public void PreviewDetails(bool expandedOnly)
+    {
+        List<EncounterSnapshot> past = m_tracker.SnapshotPast();
+        int boss = past.FindLastIndex(f => f.IsBoss);
+        m_view = boss >= 0 ? boss : past.Count - 1;
+        int user = m_view >= 0 ? past[m_view].Combatants.FirstOrDefault(c => c.IsUser)?.Id ?? -1 : -1;
+        if (expandedOnly)
+        {
+            m_expanded = user;
+        }
+        else
+        {
+            m_details.Show(user);
+        }
+    }
+
     public void ClearAll()
     {
         m_tracker.Clear();
         m_animFractions.Clear();
         m_view = -1;
+        m_expanded = -1;
     }
 
-    private EncounterSnapshot? GetDisplayedEvent()
+    // detailed: with skills and the per-second values (an expanded bar, the details window).
+    private EncounterSnapshot? GetDisplayedEvent(bool detailed)
     {
         // Cleared elsewhere (a new dungeon run): back to the current fight.
         if (m_tracker.Generation != m_generation)
@@ -83,7 +109,7 @@ public sealed class MeterWindow
 
         if (m_view == -2)
         {
-            return m_tracker.GetOverall();
+            return m_tracker.GetOverall(m_config.OverallBossesOnly);
         }
 
         if (m_view >= 0 && m_view < m_tracker.PastCount)
@@ -91,7 +117,7 @@ public sealed class MeterWindow
             return m_tracker.GetPast(m_view);
         }
 
-        return m_tracker.Current;
+        return detailed ? m_tracker.CurrentDetailed : m_tracker.Current;
     }
 
     public void Draw()
@@ -101,7 +127,10 @@ public sealed class MeterWindow
             return;
         }
 
-        EncounterSnapshot? ev = this.GetDisplayedEvent();
+        EncounterSnapshot? ev = this.GetDisplayedEvent(m_expanded >= 0 || m_details.Visible);
+
+        // Its own window: it stays while the meter hides out of combat.
+        m_details.Draw(ev);
 
         if (m_config.OnlyInCombat && !m_config.TestMode && (ev is null || !ev.Active) && !m_settings.Visible)
         {
@@ -142,6 +171,7 @@ public sealed class MeterWindow
             Vector2 winPos = ImGui.GetWindowPos();
             Vector2 winSize = ImGui.GetWindowSize();
             m_settings.SetMeterRect(winPos, winSize);
+            m_details.SetAnchor(winPos, winSize);
 
             // Check this in the main-window scope: the popup id is created here, and
             // a child window has a different id seed (so IsPopupOpen would miss it).
@@ -276,7 +306,7 @@ public sealed class MeterWindow
         headerColor.W = m_config.HeaderOpacity;
         dl.AddRectFilled(wp, new Vector2(wp.X + width, wp.Y + h), Col(headerColor), 10f, ImDrawFlags.RoundCornersTop);
 
-        string viewLabel = m_view == -2 ? "Overall" : m_view >= 0 ? "History" : "Current";
+        string viewLabel = m_view == -2 ? (m_config.OverallBossesOnly ? "Overall (bosses)" : "Overall") : m_view >= 0 ? "History" : "Current";
         string duration = ev?.Duration ?? "00:00";
         string rest = $"  -  {viewLabel}   ";
         string paren = $"({duration})";
@@ -346,7 +376,7 @@ public sealed class MeterWindow
         if (ev is null || ev.Combatants.Count == 0)
         {
             // Capture problems only replace the bars while there is nothing to show.
-            ImGui.TextWrapped(m_status() ?? "Waiting for combat data...");
+            ImGui.TextWrapped(m_status() ?? (m_view == -2 && m_config.OverallBossesOnly ? "No boss fight yet." : "Waiting for combat data..."));
             return;
         }
 
@@ -427,6 +457,121 @@ public sealed class MeterWindow
         this.Text(dl, new Vector2(pos.X + width - rw - 6f, pos.Y + ((barH - rightSize) / 2f)), right, rightSize, white);
 
         ImGui.Dummy(new Vector2(width, rowH));
+        this.BarClick(c);
+
+        // The player the details window shows.
+        if (m_details.Visible && m_details.PlayerId == c.Id)
+        {
+            dl.AddRect(pos, new Vector2(pos.X + width, pos.Y + barH), Col(Theme.Accent), round, ImDrawFlags.RoundCornersAll, 2f);
+        }
+
+        if (m_expanded == c.Id && !m_details.Visible)
+        {
+            this.DrawExpanded(c, baseCol, width);
+        }
+    }
+
+    // A click on a bar (not the end of dragging the meter): with the details window open it
+    // shows that player there, otherwise the bar opens or closes its top skills.
+    private void BarClick(Combatant c)
+    {
+        if (ImGui.IsItemClicked(ImGuiMouseButton.Left))
+        {
+            m_pressed = c.Id;
+            m_pressedAt = ImGui.GetMousePos();
+        }
+
+        if (m_pressed != c.Id || !ImGui.IsMouseReleased(ImGuiMouseButton.Left))
+        {
+            return;
+        }
+
+        m_pressed = -1;
+        if (!ImGui.IsItemHovered() || Vector2.Distance(ImGui.GetMousePos(), m_pressedAt) > 4f)
+        {
+            return;
+        }
+
+        if (m_details.Visible)
+        {
+            m_details.Show(c.Id);
+        }
+        else
+        {
+            m_expanded = m_expanded == c.Id ? -1 : c.Id;
+        }
+    }
+
+    // Under an opened bar: crit, back and double rates, the five biggest skills and the
+    // button to the details window.
+    private void DrawExpanded(Combatant c, Vector4 color, float width)
+    {
+        const float line = 19f, pad = 8f, indent = 12f, size = 13f;
+        string language = m_config.SkillLanguage ?? Game.SkillNames.DefaultLanguage();
+        List<SkillRow> rows = SkillDetails.Rows(c, m_metric == Metric.HealingDone, language).Take(5).ToList();
+        HitRates rates = SkillDetails.Rates(c);
+
+        ImDrawListPtr dl = ImGui.GetWindowDrawList();
+        Vector2 pos = ImGui.GetCursorScreenPos();
+        float h = pad + 22f + (Math.Max(1, rows.Count) * line) + pad;
+        Vector2 min = new(pos.X + indent, pos.Y);
+        Vector2 max = new(pos.X + width, pos.Y + h);
+        dl.AddRectFilled(min, max, Col(new Vector4(0.106f, 0.106f, 0.129f, 0.96f)), 6f);
+        dl.AddRectFilled(min, new Vector2(min.X + 2f, max.Y), Col(color));
+
+        uint muted = Col(Theme.Muted);
+        uint white = Col(Theme.Text);
+        float x = min.X + 12f;
+        float y = min.Y + pad;
+        foreach ((string label, float? v) in new[] { ("Crit", rates.Crit), ("Back", rates.Back), ("Double", rates.Double) })
+        {
+            this.Text(dl, new Vector2(x, y), label, size, muted, false);
+            x += this.TextW(label, size) + 4f;
+            string s = v is float f ? (f * 100f).ToString("0", CultureInfo.InvariantCulture) + "%" : "—";
+            this.Text(dl, new Vector2(x, y), s, size, white, false);
+            x += this.TextW(s, size) + 12f;
+        }
+
+        // "Details": opens the window for this player and closes the bar.
+        const string label2 = "Details";
+        float bw = this.TextW(label2, size) + 22f;
+        Vector2 bmin = new(max.X - bw - 8f, y - 3f);
+        ImGui.SetCursorScreenPos(bmin);
+        if (ImGui.InvisibleButton($"##details{c.Id}", new Vector2(bw, 20f)))
+        {
+            m_details.Show(c.Id);
+            m_expanded = -1;
+        }
+
+        bool hovered = ImGui.IsItemHovered();
+        dl.AddRectFilled(bmin, bmin + new Vector2(bw, 20f), Col(hovered ? Theme.AccentHover : Theme.Accent), 6f);
+        this.Text(dl, new Vector2(bmin.X + 11f, bmin.Y + 3f), label2, size, white, false);
+
+        float inner = max.X - min.X - 24f;
+        float rx = min.X + 12f;
+        y += 24f;
+        if (rows.Count == 0)
+        {
+            this.Text(dl, new Vector2(rx, y), "No skill data for this fight.", size, muted, false);
+        }
+
+        long top = rows.Count > 0 ? Math.Max(1, rows[0].Amount) : 1;
+        foreach (SkillRow r in rows)
+        {
+            this.Text(dl, new Vector2(rx, y), this.Fit(r.Name, inner * 0.38f, size), size, white, false);
+            Vector2 barMin = new(rx + (inner * 0.40f), y + 6f);
+            float barW = inner * 0.30f;
+            dl.AddRectFilled(barMin, new Vector2(barMin.X + barW, barMin.Y + 5f), Col(Theme.Track), 3f);
+            dl.AddRectFilled(barMin, new Vector2(barMin.X + (barW * r.Amount / top), barMin.Y + 5f), Col(color), 3f);
+            string amount = this.Fmt(r.Amount);
+            this.Text(dl, new Vector2(rx + (inner * 0.86f) - this.TextW(amount, size), y), amount, size, white, false);
+            string crit = r.Crit is float cr ? (cr * 100f).ToString("0", CultureInfo.InvariantCulture) + "%" : "—";
+            this.Text(dl, new Vector2(rx + inner - this.TextW(crit, size), y), crit, size, muted, false);
+            y += line;
+        }
+
+        ImGui.SetCursorScreenPos(pos);
+        ImGui.Dummy(new Vector2(width, h));
     }
 
     private float DrawJobIndicator(ImDrawListPtr dl, string job, Vector4 baseCol, Vector2 pos, float x, float barH, float leftSize, bool known)

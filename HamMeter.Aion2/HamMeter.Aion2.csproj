@@ -34,6 +34,9 @@
     <EmbeddedResource Include="Assets\Icons\*.svg" LogicalName="HamMeter.Icons.%(Filename)%(Extension)" />
     <!-- Monster names and boss flags, see Game\Data\SOURCE.md. -->
     <EmbeddedResource Include="Game\Data\npcs.json" LogicalName="HamMeter.Npcs.json" />
+    <!-- Skill names, German and English, same source. -->
+    <EmbeddedResource Include="Game\Data\skills-de.json" LogicalName="HamMeter.Skills.de.json" />
+    <EmbeddedResource Include="Game\Data\skills-en.json" LogicalName="HamMeter.Skills.en.json" />
     <!-- Patch notes for "What's new" and the key that update signatures are checked against. -->
     <EmbeddedResource Include="..\CHANGELOG.md" LogicalName="HamMeter.CHANGELOG.md" />
     <EmbeddedResource Include="Update\release-public-key.txt" LogicalName="HamMeter.ReleasePublicKey" />

@@ -107,7 +107,7 @@ The release key is created once with `dotnet run --project build\ReleaseSigner -
 
 Concept, design, and UX/UI by **NennMichSchinken**. The implementation was written with the help of AI (Claude) under my direction.
 
-- Monster list (names, boss flags): compiled by **taengu** (GPL-3.0), see `HamMeter.Aion2/Game/Data/SOURCE.md`
+- Monster list (names, boss flags) and skill names: compiled by **taengu** (GPL-3.0), see `HamMeter.Aion2/Game/Data/SOURCE.md`
 - Class icons: official AION 2 artwork by **NCSoft**
 - Bar textures and styles: from **WispUI** (NennMichSchinken, MIT), the FFXIV suite HamMeter lives on in
 - Icons: [Lucide](https://lucide.dev) (ISC, see `HamMeter.Aion2/Assets/Icons/LICENSE-lucide.txt`)

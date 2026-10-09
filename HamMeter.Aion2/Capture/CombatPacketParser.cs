@@ -55,6 +55,7 @@ public sealed class CombatPacketParser
         router.On(Opcodes.Hit, p => this.Process(Opcodes.Hit, p));
         router.On(Opcodes.Tick, p => this.Process(Opcodes.Tick, p));
         router.On(Opcodes.Death, p => this.Process(Opcodes.Death, p));
+        router.On(Opcodes.RemainingHp, p => this.Process(Opcodes.RemainingHp, p));
 
         // Registered after the entity parser, so the registry knows the user by now.
         router.On(Opcodes.UserState, _ => this.ReleaseWaiting());
@@ -119,6 +120,9 @@ public sealed class CombatPacketParser
                 case Opcodes.Death:
                     this.ProcessDeath(packet);
                     break;
+                case Opcodes.RemainingHp:
+                    this.ProcessRemainingHp(packet);
+                    break;
             }
         }
         catch (Exception ex)
@@ -151,10 +155,39 @@ public sealed class CombatPacketParser
         }
 
         reader.ReadU8();      // unknown
-        reader.ReadVarInt();  // hit type (3 = critical)
-        if (layout != 4)
+        uint hitType = reader.ReadVarInt(); // 2 = normal, 3 = critical, 1 = miss, 6 = resist
+        if (hitType is HitMiss or HitResist)
         {
-            reader.Skip(3);   // hit flags, unknown, direction
+            // No damage follows: counted on the skill only.
+            if (actorId != targetId && this.ResolveSource(actorId, skillCode) is { } shooter && this.IsOurs(shooter))
+            {
+                m_tracker.Missed(shooter, skillCode);
+            }
+
+            return;
+        }
+
+        // Layout 6 carries the hit flags, the HP restored (a varint) and the direction
+        // (§5.1); the other layouts' 3 bytes are not decoded.
+        var detail = new HitDetail { Crit = hitType == HitCritical };
+        if (layout == 6)
+        {
+            byte flags = reader.ReadU8();
+            reader.ReadVarInt(); // HP restored
+            byte direction = reader.ReadU8();
+            detail = detail with
+            {
+                Back = direction == 1,
+                Front = direction == 2,
+                Block = (flags & 0x01) != 0,
+                Parry = (flags & 0x02) != 0,
+                Perfect = (flags & 0x04) != 0,
+                Double = (flags & 0x08) != 0,
+            };
+        }
+        else if (layout != 4)
+        {
+            reader.Skip(3);
         }
 
         reader.Skip(8);       // unknown
@@ -171,7 +204,7 @@ public sealed class CombatPacketParser
         if (source is null)
         {
             // Not a player skill: a monster hitting someone. On one of ours that's damage taken.
-            this.MonsterHit(now, actorId, targetId, amount, tick: false);
+            this.MonsterHit(now, actorId, targetId, amount, tick: false, detail);
             return;
         }
 
@@ -179,7 +212,7 @@ public sealed class CombatPacketParser
         {
             // Self-casts (actor == target) are instant self-heals.
             PlayerRef? healed = actorId == targetId ? source : this.ResolvePlayer(targetId);
-            this.Heal(now, source.Value, healed, amount);
+            this.Heal(now, source.Value, healed, amount, skillCode, detail.Crit);
             this.SkillLog?.Add(source.Value, "heal", skillCode, amount);
             return;
         }
@@ -191,12 +224,16 @@ public sealed class CombatPacketParser
             return;
         }
 
-        this.PlayerHit(now, source.Value, targetId, skillCode, amount, tick: false);
+        this.PlayerHit(now, source.Value, targetId, skillCode, amount, tick: false, detail);
     }
+
+    private const uint HitMiss = 1;
+    private const uint HitCritical = 3;
+    private const uint HitResist = 6;
 
     // Damage by a player skill. Only the user and the party count; there is no friendly
     // fire, so an amount on one of ours is a heal or buff HamMeter does not know yet.
-    private void PlayerHit(DateTime now, PlayerRef source, int targetId, int skillCode, long amount, bool tick)
+    private void PlayerHit(DateTime now, PlayerRef source, int targetId, int skillCode, long amount, bool tick, HitDetail detail = default)
     {
         bool sure = this.IsOurs(source);
         if (!sure && !this.MaybeOurs(source))
@@ -210,26 +247,26 @@ public sealed class CombatPacketParser
             return;
         }
 
-        m_tracker.DamageDone(now, source, amount, targetId, m_entities.TargetName(targetId), m_entities.IsBoss(targetId), tick, sure);
+        m_tracker.DamageDone(now, source, amount, targetId, m_entities.TargetName(targetId), m_entities.IsBoss(targetId), tick, sure, skillCode, detail);
         this.SkillLog?.Add(source, tick ? "tick" : "hit", skillCode, amount);
     }
 
     // An action without a player skill: damage taken when it lands on one of ours. A known
     // player as the actor is a skill HamMeter does not know, not an enemy.
-    private void MonsterHit(DateTime now, int actorId, int targetId, long amount, bool tick)
+    private void MonsterHit(DateTime now, int actorId, int targetId, long amount, bool tick, HitDetail detail = default)
     {
         if (actorId != targetId && this.ResolvePlayer(actorId) is null && this.ResolvePlayer(targetId) is { } victim)
         {
             bool sure = this.IsOurs(victim);
             if (sure || this.MaybeOurs(victim))
             {
-                m_tracker.DamageTaken(now, victim, amount, actorId, tick, sure);
+                m_tracker.DamageTaken(now, victim, amount, actorId, tick, sure, detail);
             }
         }
     }
 
     // Healing done counts for ours, healing taken on ours, whoever healed.
-    private void Heal(DateTime now, PlayerRef healer, PlayerRef? healed, long amount)
+    private void Heal(DateTime now, PlayerRef healer, PlayerRef? healed, long amount, int skillCode = 0, bool crit = false, bool tick = false)
     {
         bool healerSure = this.IsOurs(healer);
         bool healedSure = healed is { } h && this.IsOurs(h);
@@ -239,7 +276,10 @@ public sealed class CombatPacketParser
             healed is { } t && (healedSure || this.MaybeOurs(t)) ? t : null,
             amount,
             healerSure,
-            healedSure);
+            healedSure,
+            skillCode,
+            crit,
+            tick);
     }
 
     // Valid only if it fits a byte and the low nibble is 4-7.
@@ -291,7 +331,7 @@ public sealed class CombatPacketParser
             }
 
             PlayerRef? healed = actorId == targetId ? source : this.ResolvePlayer(targetId);
-            this.Heal(now, source.Value, healed, amount);
+            this.Heal(now, source.Value, healed, amount, skillCode, tick: true);
             this.SkillLog?.Add(source.Value, "hot", skillCode, amount);
             return;
         }
@@ -332,6 +372,24 @@ public sealed class CombatPacketParser
         // Anything else that dies is no enemy any more, whatever HamMeter took it for: once
         // the last engaged one is dead the fight clock pauses (a no-op for the rest).
         m_tracker.EnemyDied(this.Now(), entityId);
+    }
+
+    // ----- 00 8D: HP left, for the boss line of the chart (§5.4) -------------------------
+
+    // Body: entity, three varints, HP left as u64.
+    private void ProcessRemainingHp(byte[] packet)
+    {
+        PacketReader reader = PacketReader.Body(packet);
+        int entityId = (int)reader.ReadVarInt();
+        if (!m_entities.IsBoss(entityId))
+        {
+            return;
+        }
+
+        reader.ReadVarInt();
+        reader.ReadVarInt();
+        reader.ReadVarInt();
+        m_tracker.EnemyHp(this.Now(), entityId, (long)reader.ReadU64());
     }
 
     // ----- Entity resolution ------------------------------------------------------------

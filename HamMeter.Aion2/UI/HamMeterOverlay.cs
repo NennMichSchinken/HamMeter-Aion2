@@ -47,6 +47,8 @@ public sealed class HamMeterOverlay : Overlay
 
     public void ShowCornerPreview() => m_meter.PreviewCorner = true;
 
+    public void ShowDetailsPreview(bool expandedOnly) => m_meter.PreviewDetails(expandedOnly);
+
     // Raised after a setting changed (so the host can forward e.g. packet recording).
     public event Action? SettingsChanged
     {
