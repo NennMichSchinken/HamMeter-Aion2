@@ -303,7 +303,10 @@ public sealed class DetailWindow
                 Vector2 row = new(at.X, ty);
                 this.RightText(cl, row, value, Fmt(r.Amount), body, Col(Theme.Text), cols);
                 this.RightText(cl, row, share, Percent(r.Share, 1), body, muted, cols);
-                this.RightText(cl, row, hits, (r.Hits + r.Ticks).ToString(CultureInfo.InvariantCulture), body, Col(Theme.Text), cols);
+                // Direct hits, as the game's damage analyzer counts them; the ticks of a
+                // skill that only ticks (heal or damage over time).
+                int shown = r.Hits > 0 ? r.Hits : r.Ticks;
+                this.RightText(cl, row, hits, shown.ToString(CultureInfo.InvariantCulture), body, Col(Theme.Text), cols);
                 this.RightText(cl, row, crit, Percent(r.Crit), body, Col(Theme.Text), cols);
                 this.RightText(cl, row, back, Percent(r.Back), body, Col(Theme.Text), cols);
                 int count = r.Hits + r.Ticks;
