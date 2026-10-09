@@ -18,8 +18,8 @@ public readonly record struct CombatHit(
     bool IsDot);
 
 // What a hit packet says beyond the amount (docs/protocol.md §5.1): the hit type and the
-// flags and direction that layout 6 carries.
-public readonly record struct HitDetail(bool Crit, bool Back, bool Front, bool Double, bool Perfect, bool Block, bool Parry)
+// flags and direction that layout 6 carries, and the multi-hit bit of the layout switch.
+public readonly record struct HitDetail(bool Crit, bool Back, bool Front, bool Double, bool Perfect, bool Block, bool Parry, bool Multi)
 {
     public static readonly HitDetail None = default;
 }
@@ -27,7 +27,7 @@ public readonly record struct HitDetail(bool Crit, bool Back, bool Front, bool D
 // One skill of one player in one fight: damage or healing.
 // Hits are direct hits (crits, directions and misses count among them), Ticks the damage- or
 // heal-over-time ticks, which carry none of that.
-public sealed record SkillTotals(int SkillCode, bool Heal, long Amount, int Hits, long MaxHit, int Crits, int Backs, int Fronts, int Doubles, int Perfects, int Misses, int Ticks);
+public sealed record SkillTotals(int SkillCode, bool Heal, long Amount, int Hits, long MaxHit, int Crits, int Backs, int Fronts, int Doubles, int Perfects, int Multis, int Misses, int Ticks);
 
 // Immutable per-player totals handed to the UI.
 public sealed class Combatant
@@ -165,6 +165,7 @@ public sealed class EncounterSnapshot
             g.Sum(s => s.Fronts),
             g.Sum(s => s.Doubles),
             g.Sum(s => s.Perfects),
+            g.Sum(s => s.Multis),
             g.Sum(s => s.Misses),
             g.Sum(s => s.Ticks)))
         .ToList();

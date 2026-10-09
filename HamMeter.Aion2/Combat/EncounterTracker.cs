@@ -481,6 +481,7 @@ public sealed class EncounterTracker
             s.Fronts += d.Front ? 1 : 0;
             s.Doubles += d.Double ? 1 : 0;
             s.Perfects += d.Perfect ? 1 : 0;
+            s.Multis += d.Multi ? 1 : 0;
         }
 
         public void Miss(int skill)
@@ -516,7 +517,7 @@ public sealed class EncounterTracker
         }
 
         public List<SkillTotals> Skills() => m_skills
-            .Select(kv => new SkillTotals(kv.Key.Skill, kv.Key.Heal, kv.Value.Amount, kv.Value.Hits, kv.Value.MaxHit, kv.Value.Crits, kv.Value.Backs, kv.Value.Fronts, kv.Value.Doubles, kv.Value.Perfects, kv.Value.Misses, kv.Value.Ticks))
+            .Select(kv => new SkillTotals(kv.Key.Skill, kv.Key.Heal, kv.Value.Amount, kv.Value.Hits, kv.Value.MaxHit, kv.Value.Crits, kv.Value.Backs, kv.Value.Fronts, kv.Value.Doubles, kv.Value.Perfects, kv.Value.Multis, kv.Value.Misses, kv.Value.Ticks))
             .ToList();
 
         public float[] DamageLine() => m_damage.ToArray();
@@ -556,6 +557,7 @@ public sealed class EncounterTracker
             public int Fronts;
             public int Doubles;
             public int Perfects;
+            public int Multis;
             public int Misses;
             public int Ticks;
 
@@ -569,6 +571,7 @@ public sealed class EncounterTracker
                 this.Fronts += o.Fronts;
                 this.Doubles += o.Doubles;
                 this.Perfects += o.Perfects;
+                this.Multis += o.Multis;
                 this.Misses += o.Misses;
                 this.Ticks += o.Ticks;
             }

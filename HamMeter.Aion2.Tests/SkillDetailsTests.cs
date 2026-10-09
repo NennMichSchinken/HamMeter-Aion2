@@ -46,6 +46,20 @@ public class SkillDetailsTests
         Assert.Equal(1f / 3f, rates.Missed);
     }
 
+    // Bit 20 of the layout switch: the game's "Mehrfachtreffer" (recording of 2026-10-09:
+    // 14 of 106 hits, as the game's damage analyzer showed).
+    [Fact]
+    public void LayoutSwitchBit20_IsAMultiHit()
+    {
+        this.Hit(Mob, 12_040_140, 800, layoutSwitch: 0x26);
+        this.Hit(Mob, 12_040_140, 800);
+        this.Hit(Mob, 12_040_140, 800);
+        this.Hit(Mob, 12_040_140, 800);
+
+        Assert.Equal(1, this.Skill(12_040_140).Multis);
+        Assert.Equal(0.25f, SkillDetails.Rates(this.Me()).Multi);
+    }
+
     [Fact]
     public void Ticks_CountApart_AndDoNotLowerTheCritRate()
     {
@@ -147,7 +161,7 @@ public class SkillDetailsTests
     private SkillTotals Skill(int code) => this.Me().Skills.Single(s => s.SkillCode == code);
 
     // 04 38 in layout 6: hit type, then flags, HP restored, direction (§5.1).
-    private void Hit(int target, int skill, int amount, int hitType = 2, byte flags = 0, byte direction = 0, bool boss = false)
+    private void Hit(int target, int skill, int amount, int hitType = 2, byte flags = 0, byte direction = 0, bool boss = false, int layoutSwitch = 6)
     {
         if (boss)
         {
@@ -158,7 +172,7 @@ public class SkillDetailsTests
         m_engine.Stream.Dispatch(Packet(Opcodes.Hit, w =>
         {
             w.VarInt(target);
-            w.VarInt(6);
+            w.VarInt(layoutSwitch);
             w.VarInt(0);
             w.VarInt(User);
             w.U32(skill);

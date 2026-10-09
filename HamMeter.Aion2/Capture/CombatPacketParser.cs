@@ -140,7 +140,8 @@ public sealed class CombatPacketParser
         PacketReader reader = PacketReader.Body(packet);
 
         int targetId = (int)reader.ReadVarInt();
-        int layout = LayoutSwitch(reader.ReadVarInt());
+        uint layoutSwitch = reader.ReadVarInt();
+        int layout = LayoutSwitch(layoutSwitch);
         if (layout < 0)
         {
             return;
@@ -168,8 +169,9 @@ public sealed class CombatPacketParser
         }
 
         // Layout 6 carries the hit flags, the HP restored (a varint) and the direction
-        // (§5.1); the other layouts' 3 bytes are not decoded.
-        var detail = new HitDetail { Crit = hitType == HitCritical };
+        // (§5.1); the other layouts' 3 bytes are not decoded. Bit 20 of the layout switch
+        // marks a multi hit (the game's "Mehrfachtreffer").
+        var detail = new HitDetail { Crit = hitType == HitCritical, Multi = (layoutSwitch & 0x20) != 0 };
         if (layout == 6)
         {
             byte flags = reader.ReadU8();

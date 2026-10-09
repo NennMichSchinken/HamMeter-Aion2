@@ -7,8 +7,8 @@ namespace HamMeter.UI;
 public sealed record SkillRow(string Name, long Amount, int Hits, int Ticks, long MaxHit, float Share, float? Crit, float? Back);
 
 // Shares of a player's direct hits (null when there were none to count): the hits it
-// dealt, and for Parry and Block the hits it took.
-public sealed record HitRates(float? Crit, float? Back, float? Front, float? Double, float? Perfect, float? Missed, float? Parry, float? Block);
+// dealt, and for Parry and Block the hits it took. Multi: the game's "Mehrfachtreffer".
+public sealed record HitRates(float? Crit, float? Back, float? Front, float? Double, float? Perfect, float? Multi, float? Missed, float? Parry, float? Block);
 
 // What the skill details show, worked out from a combatant's numbers (no drawing here).
 public static class SkillDetails
@@ -50,6 +50,7 @@ public static class SkillDetails
             Share(dealt.Sum(s => s.Fronts), landed),
             Share(dealt.Sum(s => s.Doubles), landed),
             Share(dealt.Sum(s => s.Perfects), landed),
+            Share(dealt.Sum(s => s.Multis), landed),
             Share(dealt.Sum(s => s.Misses), hits),
             Share(c.Parries, c.HitsTaken),
             Share(c.Blocks, c.HitsTaken));

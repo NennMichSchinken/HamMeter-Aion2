@@ -158,7 +158,7 @@ arrives.
 |---|---|---|---|
 | 1 | length, opcode | | §2 |
 | 2 | target | varint | entity id |
-| 3 | layout switch | varint | valid only if ≤ 255 and the low nibble is 4–7; otherwise drop the packet |
+| 3 | layout switch | varint | valid only if ≤ 255 and the low nibble is 4–7; otherwise drop the packet. Bit `20`: multi hit |
 | 4 | unknown | varint | |
 | 5 | actor | varint | entity id of the caster |
 | 6 | skill code | u32 LE | §7 |
@@ -178,8 +178,16 @@ Hit flags (**observed**, 3,944 hits of 2026-10-08, layouts 4 and 6 only): `01` b
 parry, `04` perfect, `08` double damage; `10`, `20` and `40` are rare; `80` is set for some
 skills on every hit. Block and parry are on hits a player takes. Direction: `00` none,
 `01` back, `02` front. Hit type: 2,986 normal, 958 critical. HamMeter counts these per
-skill (crit, back, front, double, perfect, missed) and per player (parry, block of the
-hits taken); **open:** check the rates against the game's damage analyzer.
+skill (crit, back, front, double, perfect, multi hit, missed) and per player (parry, block
+of the hits taken).
+
+**Confirmed** against the game's damage analyzer ("Kampfanalyse"), two fights of
+2026-10-09 (165 and 106 hits on a training scarecrow): crit, back, front, `08` (the
+analyzer's "Wucht", column DOUB), `04` ("Perfektion", PERF) and the misses match in total
+and per skill. Bit `20` of the **layout switch** (`26` instead of `06`) is the analyzer's
+"Mehrfachtreffer" (MULT): 14 of 106 hits, matching per skill. The analyzer's own "Block"
+and "Eisenwall" are about the target's defence against your hits; HamMeter's parry and block
+are about the hits a player takes, which the analyzer does not show.
 
 Meaning:
 

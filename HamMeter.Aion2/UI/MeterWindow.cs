@@ -564,12 +564,12 @@ public sealed class MeterWindow
         {
             this.Text(dl, new Vector2(rx, y), this.Fit(r.Name, inner * 0.38f, size), size, white, false);
             Vector2 barMin = new(rx + (inner * 0.40f), y + ((size - (6f * k)) / 2f));
-            float barW = inner * 0.30f;
+            float barW = inner * 0.24f;
             dl.AddRectFilled(barMin, new Vector2(barMin.X + barW, barMin.Y + (6f * k)), Col(Theme.Track), 3f);
             dl.AddRectFilled(barMin, new Vector2(barMin.X + (barW * r.Amount / top), barMin.Y + (6f * k)), Col(color), 3f);
             string amount = this.Fmt(r.Amount);
-            this.Text(dl, new Vector2(rx + (inner * 0.86f) - this.TextW(amount, size), y), amount, size, white, false);
-            string crit = r.Crit is float cr ? (cr * 100f).ToString("0", CultureInfo.InvariantCulture) + "%" : "—";
+            this.Text(dl, new Vector2(rx + (inner * 0.78f) - this.TextW(amount, size), y), amount, size, white, false);
+            string crit = r.Crit is float cr ? (cr * 100f).ToString("0", CultureInfo.InvariantCulture) + "% crit" : "— crit";
             this.Text(dl, new Vector2(rx + inner - this.TextW(crit, size), y), crit, size, muted, false);
             y += line;
         }

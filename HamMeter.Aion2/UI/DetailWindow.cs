@@ -219,13 +219,15 @@ public sealed class DetailWindow
         ImGui.Dummy(new Vector2(width, at.Y - start.Y + h));
     }
 
-    // The hit rates as tiles, two rows of four.
+    // The hit rates as tiles, two rows of four; parry and block share the last one, being
+    // shares of the hits the player took, not of the hits it dealt.
     private void DrawRates(HitRates r)
     {
-        (string, float?)[] tiles =
+        (string, string, bool)[] tiles =
         [
-            ("Crit", r.Crit), ("Back attack", r.Back), ("Front attack", r.Front), ("Double", r.Double),
-            ("Perfect", r.Perfect), ("Missed", r.Missed), ("Parry", r.Parry), ("Block", r.Block),
+            Tile("Crit", r.Crit), Tile("Back attack", r.Back), Tile("Front attack", r.Front), Tile("Double", r.Double),
+            Tile("Perfect", r.Perfect), Tile("Multi hit", r.Multi), Tile("Missed", r.Missed),
+            ("Taken: parry / block", $"{Percent(r.Parry)} / {Percent(r.Block)}", r.Parry is not null),
         ];
         ImDrawListPtr dl = ImGui.GetWindowDrawList();
         Vector2 p = ImGui.GetCursorScreenPos();
@@ -236,11 +238,12 @@ public sealed class DetailWindow
             Vector2 min = p + new Vector2((i % 4) * (w + gap), (i / 4) * (h + gap));
             dl.AddRectFilled(min, min + new Vector2(w, h), Col(Theme.Frame), 8f);
             this.Text(dl, min + new Vector2(this.S(10f), this.S(7f)), tiles[i].Item1, label, Col(Theme.Muted));
-            float? v = tiles[i].Item2;
-            this.Text(dl, min + new Vector2(this.S(10f), this.S(24f)), Percent(v), value, Col(v is null ? Theme.Muted : Theme.Text));
+            this.Text(dl, min + new Vector2(this.S(10f), this.S(24f)), tiles[i].Item2, value, Col(tiles[i].Item3 ? Theme.Text : Theme.Muted));
         }
 
         ImGui.Dummy(new Vector2(this.S(Width), (2f * h) + gap));
+
+        static (string, string, bool) Tile(string label, float? v) => (label, Percent(v), v is not null);
     }
 
     // The skills, biggest first, about six lines; the rest scrolls.

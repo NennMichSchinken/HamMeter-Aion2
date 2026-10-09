@@ -8,7 +8,7 @@ Format (read by HamMeter's "What's new" and the update popup, keep it this way):
 
 ## 0.4.0 - 2026-10-09
 - New: Click a bar to see that player's top skills with crit, back attack and double hit rates.
-- New: "Details" opens a window with every skill, the hit rates and a chart of DPS or healing over the fight, with your party and the boss's HP.
+- New: "Details" opens a window with every skill, the hit rates (crit, back, front, double, perfect, multi hit; the same numbers as the game's damage analyzer) and a chart of DPS or healing over the fight, with your party and the boss's HP.
 - New: Skill names in German or English (Settings → Display).
 - New: Overall sums only the boss fights, the numbers to compare (Settings → Display, on by default).
 
