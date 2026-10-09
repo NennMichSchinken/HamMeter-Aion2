@@ -1,118 +1,142 @@
+<div align="center">
+
+<img src="assets/icon.png" width="96" alt="HamMeter icon">
+
 # HamMeter for Aion 2
 
-A minimalist, easy-to-read damage meter for **Aion 2**, with the same look and settings as [HamMeter for FFXIV](https://github.com/NennMichSchinken/HamMeter). It runs as a transparent overlay on top of the game.
+**A clean, easy-to-read damage meter for Aion 2, shown as an overlay on top of the game.**
 
-> **Status: early / experimental.** Solo, damage matches the in-game meter 1:1 in our tests; healing, deaths and boss fights are read as well. Group play (party list, heals on others, damage taken by the tank) is being tested on the Global servers.
+[![Latest release](https://img.shields.io/github/v/release/NennMichSchinken/HamMeter-Aion2?label=download&color=1f8bff)](https://github.com/NennMichSchinken/HamMeter-Aion2/releases/latest)
+[![Windows 10/11](https://img.shields.io/badge/Windows-10%20%7C%2011-555)](#requirements)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-555)](LICENSE)
 
-## How it works
+<img src="assets/readme/meter-details.png" alt="HamMeter: the meter and the skill details of a boss fight (test mode)">
 
-HamMeter reads the game's network packets passively (via Npcap, or Windows raw sockets when Npcap is not installed). It does not inject code, read or modify game memory, or send anything anywhere.
+</div>
 
-- **Protocol** (`docs/protocol.md`): the description of the Aion 2 traffic — framing, compressed bundles, combat, entity and party packets — with the status of every part (confirmed, observed, open). All reading code is written from it.
-- **Capture** (`HamMeter.Aion2/Capture`): finds `Aion2.exe`'s own connections and reads only those, through Npcap (also with VPN / ping boosters; tested with LagoFast) or raw sockets.
-- **Packets** (`HamMeter.Aion2/Protocol`): cuts the stream into game packets, unpacks LZ4 bundles and routes packets by opcode.
-- **Game** (`HamMeter.Aion2/Game`): who is who (your character, your party, other players, summons and their owners), what skill codes mean (class, heals, damage over time) and the monster list for names and bosses.
-- **Fights** (`HamMeter.Aion2/Combat`): damage done, damage taken, healing, deaths. Like combat in WoW, every pack is a fight of its own: the fight clock stops when the last enemy dies, so walking never lowers your DPS. Bosses always get a fight of their own. Only you and your party are listed; players who are merely nearby never are.
-- **The overlay** (`HamMeter.Aion2/UI`): a port of the FFXIV HamMeter's ImGui drawing code onto [ClickableTransparentOverlay](https://github.com/zaafar/ClickableTransparentOverlay).
+## Why HamMeter
 
-## Principles
+- **Matches the game.** Damage, crit, back attack, front attack, double, perfect and multi hit match the in-game damage analyzer exactly, total and per skill, checked boss by boss.
+- **Made for groups.** You and your party only, never players who are merely nearby. Damage, damage taken, healing, healing taken and deaths, for every boss and every pack.
+- **Skill details.** Click a bar for the top skills, or open *Details* for every skill, the hit rates and a chart of the fight with your party and the boss's HP.
+- **Fights like in WoW.** Every pack is its own fight and walking between packs never lowers your DPS. Bosses get a fight of their own with a crown. *Overall* sums up the boss fights.
+- **Safe by design.** HamMeter only reads the game's network traffic. It never touches the game's memory, injects nothing and sends nothing anywhere. [More below](#security).
 
-1. **Security first.** HamMeter touches as little data as possible, stores almost nothing, and never talks to the network.
-2. **Lightweight.** No bloat: Windows built-ins over extra libraries, no feature without a reason.
+<img align="right" src="assets/readme/meter-expanded.png" width="300" alt="An expanded bar with the top skills">
 
-### Security model
+### Also
 
-- **Minimal network access.** HamMeter opens no listening port. Its only outgoing connection is the update check: one HTTPS request to the GitHub API when it starts (can be turned off in the setup and in Settings → Data & App). Nothing is sent besides the request itself.
-- **Signed updates.** "Update now" only runs a downloaded setup whose ECDSA-P256 signature matches the public key built into HamMeter (`HamMeter.Aion2/Update/release-public-key.txt`). The private key never leaves the author's PC, so a compromised GitHub account alone cannot push code to users. Downloads are HTTPS-only, GitHub hosts only, size-capped, and locked between verification and start.
-- **Least privilege.** With Npcap installed, HamMeter runs as a normal user. Only without Npcap does it restart itself with administrator rights (UAC prompt), because Windows raw sockets require them.
-- **Narrow capture.** A packet is only looked at if it belongs exactly to a TCP connection owned by `Aion2.exe`; everything else is dropped after the header checks. With Npcap, HamMeter's reader opens only the adapter that carries the game connection, not in promiscuous mode, with a kernel filter for exactly that connection. Raw sockets do not switch the network card to promiscuous mode either (`RCVALL_IPLEVEL`). All lengths are bounds-checked, fragments are dropped, and a connection is only used after Aion's keep-alive was seen on it.
+- Updates itself, with signed updates
+- Every dungeon run starts with an empty meter
+- Skill names in English or German
+- Class icons, class or role colours, nine bar styles
+- Works with VPNs and ping boosters such as LagoFast
+- Sits in the tray, no taskbar button
+- Test mode to try every setting without a fight
+
+<br clear="right">
+
+## Get started
+
+1. **Download** `HamMeter-Setup-<version>.exe` from the [latest release](https://github.com/NennMichSchinken/HamMeter-Aion2/releases/latest) and run it.
+2. **Pick "With Npcap"** in the setup (recommended). The setup installs it for you and checks it.
+3. **Set Aion 2 to borderless windowed** and play. The meter shows up with your first fight.
+
+Updates are offered inside HamMeter. Uninstall from *Apps & Features*; nothing stays behind.
+
+### Requirements
+
+- Windows 10 or 11 (64-bit)
+- Aion 2 in **borderless windowed** mode (no overlay can draw over exclusive fullscreen)
+- [Npcap](https://npcap.com/#download), installed by the setup. Without Npcap, HamMeter needs administrator rights on every start and VPNs or ping boosters don't work.
+
+## Contact
+
+Questions, ideas or a bug? Write me on **Discord: `nennmichschinken`**, or open an [issue](https://github.com/NennMichSchinken/HamMeter-Aion2/issues).
+
+If numbers look wrong: in *Settings → Data & App* turn on **Record packets**, play the fight, quit HamMeter from the tray and send me the screenshot of the game's damage analyzer and the recording from `%APPDATA%\HamMeter-Aion2\PacketLogs`. Recordings are encrypted and can only be opened on your PC, so send them only when asked.
+
+## Security
+
+HamMeter touches as little as it can:
+
+- **Read-only.** It reads the network packets of `Aion2.exe`'s own connections and drops everything else. No game memory, no code injection, nothing sent to the game.
+- **No data leaves your PC.** The only connection HamMeter makes is the update check to GitHub on start, and you can turn it off.
+- **Signed updates.** *Update now* only runs a setup signed with the author's key, so a hijacked GitHub account alone cannot ship code to you.
+- **No admin rights** with Npcap. Nothing is stored except your settings; fights live in memory and are gone when HamMeter closes.
+
+<details>
+<summary><b>The full security model</b></summary>
+
+- **Minimal network access.** HamMeter opens no listening port. Its only outgoing connection is the update check: one HTTPS request to the GitHub API on start (can be turned off in the setup and in Settings → Data & App).
+- **Signed updates.** "Update now" only runs a downloaded setup whose ECDSA-P256 signature matches the public key built into HamMeter (`HamMeter.Aion2/Update/release-public-key.txt`). The private key never leaves the author's PC. Downloads are HTTPS-only, GitHub hosts only, size-capped, and locked between verification and start.
+- **Least privilege.** With Npcap, HamMeter runs as a normal user. Only without Npcap does it restart with administrator rights (UAC prompt), because Windows raw sockets require them.
+- **Narrow capture.** A packet is only looked at if it belongs exactly to a TCP connection owned by `Aion2.exe`; everything else is dropped after the header checks. With Npcap, only the adapter that carries the game connection is opened, not in promiscuous mode, with a kernel filter for the game's servers. Raw sockets don't switch the network card to promiscuous mode either (`RCVALL_IPLEVEL`). All lengths are bounds-checked, fragments are dropped, and a connection is only used after Aion's keep-alive was seen on it.
 - **Safe unpacking.** Compressed bundles are size- and depth-limited, so a malformed packet cannot exhaust memory.
-- **Data minimisation.** No database: fight history lives in memory and is gone when HamMeter closes. Logs contain no packet contents. `config.json` holds only look-and-feel settings.
-- **Encrypted recordings.** The optional packet recording (for checking numbers) is AES-256-GCM encrypted, with the key protected by Windows DPAPI for your Windows account only. It is off on every start and recordings are deleted after 7 days.
+- **Data minimisation.** No database: fight history lives in memory. Logs contain no packet contents. `config.json` holds only look-and-feel settings.
+- **Encrypted recordings.** The optional packet recording is AES-256-GCM encrypted, with the key protected by Windows DPAPI for your Windows account only. It is off on every start, and recordings are deleted after 7 days.
 - **Memory-safe parsing.** All packet parsing is managed C# with bounds-checked readers.
 
-## Requirements
+</details>
 
-- Windows 10/11 x64
-- Aion 2 in **borderless windowed** mode (an overlay cannot draw over exclusive fullscreen)
-- Optional but recommended: [Npcap](https://npcap.com/#download) with **"WinPcap API-compatible Mode"** checked. Without it HamMeter needs administrator rights and may need a Windows Firewall exception, and VPN / ping boosters are not supported.
+## For developers
 
-## Features
+<details>
+<summary><b>How it works</b></summary>
 
-- Metrics: Damage Done, Damage Taken, Healing Done, Healing Taken, Deaths
-- Current fight / Overall / per-fight history, named after the boss or main target
-- Boss fights are kept apart from the trash before and after them, show the boss's name at the top of the meter and are marked with a crown
-- Only you and your party are listed, also in the open world, never players nearby
-- Every new dungeon run starts with an empty meter; porting out and back in keeps your fights (can be turned off)
-- Class icons or text tags, per-class or per-role colours (fully editable)
-- Nine bar textures to choose from (Flat, Smooth, Gradient, Bevel, Sheen, Glow, Glow top, Glow bottom, Aurora)
-- Lives in the notification area (tray icon), no taskbar button
-- Test mode to preview the layout without being in combat
-- All HamMeter look settings: sizes, spacing, opacity, colours, and more
-- Encrypted packet recording (Settings → Data & App) to replay and check a fight
+HamMeter reads the game's network packets passively, through Npcap or Windows raw sockets.
 
-Settings, the log and recordings are stored in `%APPDATA%\HamMeter-Aion2`.
+- **Protocol** (`docs/protocol.md`): the Aion 2 traffic (framing, compressed bundles, combat, entity and party packets) with the status of every part: confirmed, observed or open. All reading code is written from it.
+- **Capture** (`HamMeter.Aion2/Capture`): finds `Aion2.exe`'s connections and reads only those; TCP reassembly in order.
+- **Packets** (`HamMeter.Aion2/Protocol`): cuts the stream into game packets, unpacks LZ4 bundles, routes by opcode.
+- **Game** (`HamMeter.Aion2/Game`): who is who (you, your party, summons and their owners), what skill codes mean, the monster list for names and bosses.
+- **Fights** (`HamMeter.Aion2/Combat`): damage, damage taken, healing, deaths and the skill details, per fight.
+- **Overlay** (`HamMeter.Aion2/UI`): ImGui on [ClickableTransparentOverlay](https://github.com/zaafar/ClickableTransparentOverlay), ported from [HamMeter for FFXIV](https://github.com/NennMichSchinken/HamMeter).
 
-## Install and uninstall
+</details>
 
-Run `HamMeter-Setup-<version>.exe`. The wizard (in the HamMeter design) lets you choose:
-
-- **With Npcap (recommended):** HamMeter runs without administrator rights. The wizard walks you through installing Npcap and checks that it is set up correctly before you can continue.
-- **Without Npcap:** nothing extra to install, but HamMeter asks for administrator rights on every start and a firewall rule (inbound TCP, HamMeter.exe only) is added.
-
-HamMeter is installed to `C:\Program Files\HamMeter`. Running a newer setup updates in place and keeps your settings.
-
-Uninstall from **Apps & Features**. You can also delete your settings, log and recordings, and uninstall Npcap (pre-selected only if HamMeter's setup installed it). Nothing of HamMeter stays behind.
-
-How the setup works: `HamMeter-Setup.exe` is our wizard, running without elevation. The [Inno Setup](https://jrsoftware.org/isinfo.php) engine is embedded, verified by SHA-256 and run invisibly with your choices; it is the only part that asks for administrator rights.
-
-## Building
+<details>
+<summary><b>Building and testing</b></summary>
 
 ```bash
-git clone <this repo>
 dotnet build HamMeter.Aion2.slnx
 dotnet test HamMeter.Aion2.slnx
-```
-
-Run a development build:
-
-```bash
 dotnet run --project HamMeter.Aion2 -c Release
 ```
 
-Release build (needs [Inno Setup 6](https://jrsoftware.org/isdl.php): `winget install JRSoftware.InnoSetup`):
+Test mode with the skill details open (also used for the pictures above):
 
-```powershell
-.\build\build.ps1 -Version 0.1.0
+```bash
+dotnet run --project HamMeter.Aion2 -c Release -- --preview --preview-test 2
 ```
 
-This writes `artifacts\HamMeter-Setup-<version>.exe`, its signature (`.sig`), SHA-256 and `release-notes-<version>.md`.
+After a game patch: turn on *Record packets*, play a few fights, quit HamMeter, then `HamMeter.exe --replay <file.hmrec>` writes `<file>.report.txt` with every fight, per-skill totals and the opcodes seen. Compare with the game's damage analyzer, fix what changed and update `docs/protocol.md`. New monsters go into `HamMeter.Aion2/Game/Data/npcs.json` (see `Game/Data/SOURCE.md`).
 
-### After a game patch
+</details>
 
-1. Turn on *Record packets*, play a few fights, quit HamMeter.
-2. Replay the recording: `HamMeter.exe --replay <file.hmrec>` writes `<file>.report.txt` with every fight, per-skill totals and the opcodes seen.
-3. Compare with the in-game meter, fix what changed and update `docs/protocol.md`.
-4. New monsters: update `HamMeter.Aion2/Game/Data/npcs.json` as described in `Game/Data/SOURCE.md`.
+<details>
+<summary><b>Releasing</b></summary>
 
-### Releasing
+1. Add the patch notes to `CHANGELOG.md` (`## <version> - <yyyy-mm-dd>`, lines `- New:` / `- Improved:` / `- Fixed:`; `[important]` on the heading for releases users should not skip).
+2. Set `<Version>` in `HamMeter.Aion2/HamMeter.Aion2.csproj`, then run `.\build\build.ps1 -Version <version>` (needs [Inno Setup 6](https://jrsoftware.org/isdl.php)).
+3. Sign on the author's Windows account: `dotnet run --project build\ReleaseSigner -c Release -- sign artifacts\HamMeter-Setup-<version>.exe`.
+4. Create the GitHub release `v<version>` with `release-notes-<version>.md` as the text and upload the setup and its `.sig`. HamMeter only offers releases that have both.
 
-1. Add the patch notes to `CHANGELOG.md` (`## <version> - <yyyy-mm-dd>`, lines `- New:` / `- Improved:` / `- Fixed:`; add `[important]` to the heading for releases users should not skip). The build refuses a version without notes.
-2. Run `.\build\build.ps1 -Version <version>`. It signs the setup with the release key.
-3. Create a GitHub release with the tag `v<version>`, paste `release-notes-<version>.md` as the text, and upload `HamMeter-Setup-<version>.exe` and `HamMeter-Setup-<version>.exe.sig`. HamMeter only offers releases that have both files.
+The release key lives DPAPI-protected in `%APPDATA%\HamMeter-ReleaseKey`. Losing it means installed copies can no longer update themselves.
 
-The release key is created once with `dotnet run --project build\ReleaseSigner -- create-key HamMeter.Aion2\Update\release-public-key.txt` and stored DPAPI-protected in `%APPDATA%\HamMeter-ReleaseKey` (this Windows account only). Losing it means installed copies can no longer update themselves, so keep a backup of the Windows account or plan a key rotation.
+</details>
 
 ## Credits
 
-Concept, design, and UX/UI by **NennMichSchinken**. The implementation was written with the help of AI (Claude) under my direction.
+Concept, design and UX/UI by **NennMichSchinken**. The code was written with the help of AI (Claude) under my direction.
 
-- Monster list (names, boss flags) and skill names: compiled by **taengu** (GPL-3.0), see `HamMeter.Aion2/Game/Data/SOURCE.md`
+- Monster list and skill names: compiled by **taengu** (GPL-3.0), see `HamMeter.Aion2/Game/Data/SOURCE.md`
 - Class icons: official AION 2 artwork by **NCSoft**
-- Bar textures and styles: from **WispUI** (NennMichSchinken, MIT), the FFXIV suite HamMeter lives on in
-- Icons: [Lucide](https://lucide.dev) (ISC, see `HamMeter.Aion2/Assets/Icons/LICENSE-lucide.txt`)
-- Packet capture library: [SharpPcap](https://github.com/dotpcap/sharppcap) (MIT); LZ4: [K4os.Compression.LZ4](https://github.com/MiloszKrajewski/K4os.Compression.LZ4) (MIT)
-- Installer engine: [Inno Setup](https://jrsoftware.org/isinfo.php) by Jordan Russell and Martijn Laan
+- Bar textures and styles: **WispUI** (NennMichSchinken, MIT)
+- Icons: [Lucide](https://lucide.dev) (ISC)
+- [SharpPcap](https://github.com/dotpcap/sharppcap) (MIT), [K4os.Compression.LZ4](https://github.com/MiloszKrajewski/K4os.Compression.LZ4) (MIT), [Inno Setup](https://jrsoftware.org/isinfo.php) by Jordan Russell and Martijn Laan
+
+Aion 2 is a trademark of NCSoft. HamMeter is a fan project and not affiliated with NCSoft.
 
 ## License
 
