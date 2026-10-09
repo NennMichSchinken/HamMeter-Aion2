@@ -49,8 +49,14 @@ in-game meter.
   until the missing one is sent again: segments get lost on the way (VPN, ping booster)
   and the resend comes after the ones behind it. Passing them on at once lost hits
   (dungeon run of 2026-10-09: 5 of the user's hits on the end boss, ~4,400 damage, missing
-  against the game's damage analyzer). A gap that has not filled after 3 s or 2 MB held is
+  against the game's damage analyzer). A gap that has not filled after 1.5 s or 2 MB held is
   skipped: the stream continues after it and the framer re-synchronises (§2).
+- **IPv4 total length 0** means a segment Windows did not cut to the MTU (loopback, which
+  VPNs and ping boosters use, or segmentation offload): its length is the captured length.
+  Npcap captures up to 256 KB per packet for the same reason. Dropping these left gaps
+  that never filled: 16 skipped gaps in 7 minutes through LagoFast on 2026-10-09, one of
+  them with the spawn (`41 36`) of the user's Holy Aura, whose 8 hits on the boss were then
+  nobody's. (**Hypothesis**, to confirm with the "TCP gap skipped" lines of HamMeter.log.)
 - `FIN` / `RST` end the stream; its buffers are dropped.
 
 ---

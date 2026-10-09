@@ -20,7 +20,7 @@ public sealed class TcpReassembler(IStreamSink sink, ILogger log, string keyPref
 
     // How long and how much is held for a gap before it is skipped. A resend comes after
     // a few hundred milliseconds; the meter waits that long at most.
-    private const long MaxHoldMs = 3000;
+    private const long MaxHoldMs = 1500;
     private const int MaxHeldBytes = 2 * 1024 * 1024;
 
     // Milliseconds, for the hold time (tests set their own).
@@ -85,6 +85,13 @@ public sealed class TcpReassembler(IStreamSink sink, ILogger log, string keyPref
 
         int ihl = (ip[0] & 0x0F) * 4;
         int total = BinaryPrimitives.ReadUInt16BigEndian(ip[2..]);
+        if (total == 0)
+        {
+            // A segment Windows did not cut to the MTU (loopback, used by VPNs and ping
+            // boosters, or segmentation offload) carries length 0: it is the whole capture.
+            total = ip.Length;
+        }
+
         if (ihl < 20 || total < ihl || total > ip.Length)
         {
             return;

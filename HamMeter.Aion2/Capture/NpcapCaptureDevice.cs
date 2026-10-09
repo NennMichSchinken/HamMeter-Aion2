@@ -24,6 +24,10 @@ public sealed class NpcapCaptureDevice : IGameCapture
     // default is 1 MB), or hits are lost.
     private const int KernelBufferBytes = 8 * 1024 * 1024;
 
+    // Loopback segments are not cut to the MTU and can be far bigger than the usual 64 KB
+    // capture length; a cut one is lost for good. 256 KB is the most Npcap takes.
+    private const int SnapLength = 256 * 1024;
+
     private readonly TcpReassembler m_reassembler;
     private readonly ILogger<NpcapCaptureDevice> m_log;
     private readonly Lock m_sync = new();
@@ -183,7 +187,7 @@ public sealed class NpcapCaptureDevice : IGameCapture
         try
         {
             device.OnPacketArrival += this.OnPacketArrival;
-            device.Open(new DeviceConfiguration { Mode = DeviceModes.None, ReadTimeout = ReadTimeoutMs, BufferSize = KernelBufferBytes });
+            device.Open(new DeviceConfiguration { Mode = DeviceModes.None, ReadTimeout = ReadTimeoutMs, BufferSize = KernelBufferBytes, Snaplen = SnapLength });
             device.Filter = filter;
             device.StartCapture();
             m_log.LogInformation("[NPCAP] Listening on the adapter of Aion's connection ({Kind})",

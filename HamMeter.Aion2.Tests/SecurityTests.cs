@@ -148,14 +148,27 @@ public class RawSocketFilterTests
 
         reassembler.HandleIpPacket(Ip(Server, ServerPort, Local, LocalPort, [1], seq: 1000));
         reassembler.HandleIpPacket(Ip(Server, ServerPort, Local, LocalPort, [3], seq: 1002)); // 1001 never comes
-        now = 2_000;
+        now = 1_000;
         reassembler.HandleIpPacket(Ip(Server, ServerPort, Local, LocalPort, [4], seq: 1003));
         Assert.Equal([[1]], sink.Payloads);
 
-        now = 3_500;
+        now = 1_600;
         reassembler.HandleIpPacket(Ip(Server, ServerPort, Local, LocalPort, [5], seq: 1004));
 
         Assert.Equal([[1], [3], [4], [5]], sink.Payloads);
+    }
+
+    // Loopback (VPN, ping booster) and segmentation offload: segments not cut to the MTU
+    // carry IP length 0. Dropping them left gaps that never filled (2026-10-09: 16 in 7 min).
+    [Fact]
+    public void SegmentWithIpLengthZero_IsTheWholeCapture()
+    {
+        this.Validate();
+        byte[] big = Ip(Server, ServerPort, Local, LocalPort, [1, 2, 3], seq: 1000);
+        BinaryPrimitives.WriteUInt16BigEndian(big.AsSpan(2), 0);
+        m_device.HandleDatagram(big);
+
+        Assert.Equal([[1, 2, 3]], m_sink.Payloads);
     }
 
     private void Validate()
