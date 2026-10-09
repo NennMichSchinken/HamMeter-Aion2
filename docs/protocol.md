@@ -43,10 +43,14 @@ in-game meter.
 ### TCP reassembly
 
 - Segments are appended in sequence-number order per connection.
-- Duplicates / retransmissions (segment entirely before the expected sequence) are
-  dropped; sequence arithmetic must be modulo 2³².
-- On a gap (segment after the expected sequence) the missing bytes are lost; the
-  stream continues from the new position and the framer re-synchronises (§2).
+- Duplicates (segment entirely before the expected sequence) are dropped; a resend that
+  overlaps passed bytes passes only its new bytes. Sequence arithmetic is modulo 2³².
+- On a gap (segment after the expected sequence) the segments behind it are **held**
+  until the missing one is sent again: segments get lost on the way (VPN, ping booster)
+  and the resend comes after the ones behind it. Passing them on at once lost hits
+  (dungeon run of 2026-10-09: 5 of the user's hits on the end boss, ~4,400 damage, missing
+  against the game's damage analyzer). A gap that has not filled after 3 s or 2 MB held is
+  skipped: the stream continues after it and the framer re-synchronises (§2).
 - `FIN` / `RST` end the stream; its buffers are dropped.
 
 ---

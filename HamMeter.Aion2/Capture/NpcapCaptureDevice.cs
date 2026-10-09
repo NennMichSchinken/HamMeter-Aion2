@@ -20,6 +20,10 @@ public sealed class NpcapCaptureDevice : IGameCapture
     private const int RefreshMs = 2000;
     private const int ReadTimeoutMs = 500;
 
+    // Kernel buffer for the 500 ms between reads: a big fight must not overflow it (the
+    // default is 1 MB), or hits are lost.
+    private const int KernelBufferBytes = 8 * 1024 * 1024;
+
     private readonly TcpReassembler m_reassembler;
     private readonly ILogger<NpcapCaptureDevice> m_log;
     private readonly Lock m_sync = new();
@@ -179,7 +183,7 @@ public sealed class NpcapCaptureDevice : IGameCapture
         try
         {
             device.OnPacketArrival += this.OnPacketArrival;
-            device.Open(new DeviceConfiguration { Mode = DeviceModes.None, ReadTimeout = ReadTimeoutMs });
+            device.Open(new DeviceConfiguration { Mode = DeviceModes.None, ReadTimeout = ReadTimeoutMs, BufferSize = KernelBufferBytes });
             device.Filter = filter;
             device.StartCapture();
             m_log.LogInformation("[NPCAP] Listening on the adapter of Aion's connection ({Kind})",

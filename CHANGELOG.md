@@ -12,6 +12,7 @@ Format (read by HamMeter's "What's new" and the update popup, keep it this way):
 - New: Skill names in German or English (Settings → Display).
 - New: Overall sums only the boss fights, the numbers to compare (Settings → Display, on by default).
 - Fixed: Russian names show in full instead of "?????".
+- Fixed: No more lost hits when the connection drops a packet and the game server sends it again (often with VPN or ping boosters such as LagoFast).
 
 ## 0.3.1 - 2026-10-09
 - New: Every new dungeon run starts with an empty meter and history. Porting out and back in during a run keeps your fights (Settings → Display, on by default).

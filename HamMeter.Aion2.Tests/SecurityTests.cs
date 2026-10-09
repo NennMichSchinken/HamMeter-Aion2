@@ -108,6 +108,64 @@ public class RawSocketFilterTests
         Assert.Equal([[1, 2, 3], [4, 5]], m_sink.Payloads);
     }
 
+    // A segment lost on the way (VPN, ping booster) is sent again after the ones behind
+    // it: those wait for it, nothing is dropped (dungeon run of 2026-10-09 lost hits).
+    [Fact]
+    public void LostSegment_SentAgainLater_IsPassedOnInOrder()
+    {
+        this.Validate();
+        m_device.HandleDatagram(Ip(Server, ServerPort, Local, LocalPort, [1, 2, 3], seq: 1000));
+        m_device.HandleDatagram(Ip(Server, ServerPort, Local, LocalPort, [6, 7], seq: 1005));    // after a gap
+        m_device.HandleDatagram(Ip(Server, ServerPort, Local, LocalPort, [8], seq: 1007));
+        Assert.Equal([[1, 2, 3]], m_sink.Payloads);
+
+        m_device.HandleDatagram(Ip(Server, ServerPort, Local, LocalPort, [4, 5], seq: 1003));    // the resend
+
+        Assert.Equal([[1, 2, 3], [4, 5], [6, 7], [8]], m_sink.Payloads);
+    }
+
+    [Fact]
+    public void Resend_OverlappingPassedBytes_PassesOnlyTheNewOnes()
+    {
+        this.Validate();
+        m_device.HandleDatagram(Ip(Server, ServerPort, Local, LocalPort, [1, 2, 3], seq: 1000));
+        m_device.HandleDatagram(Ip(Server, ServerPort, Local, LocalPort, [2, 3, 4, 5], seq: 1001));
+
+        Assert.Equal([[1, 2, 3], [4, 5]], m_sink.Payloads);
+    }
+
+    [Fact]
+    public void GapThatNeverFills_IsSkippedAfterAWhile()
+    {
+        long now = 0;
+        var sink = new RecordingSink();
+        var reassembler = new TcpReassembler(sink, NullLogger.Instance, "Test") { Clock = () => now };
+        reassembler.SetAllowed([new TcpConnection(Local, LocalPort, Server, ServerPort)]);
+        for (int i = 0; i < 5; i++)
+        {
+            reassembler.HandleIpPacket(Ip(Server, ServerPort, Local, LocalPort, [0x0B, 0x0E, 0x00, 0x36, 0, 0], seq: (uint)(i * 6)));
+        }
+
+        reassembler.HandleIpPacket(Ip(Server, ServerPort, Local, LocalPort, [1], seq: 1000));
+        reassembler.HandleIpPacket(Ip(Server, ServerPort, Local, LocalPort, [3], seq: 1002)); // 1001 never comes
+        now = 2_000;
+        reassembler.HandleIpPacket(Ip(Server, ServerPort, Local, LocalPort, [4], seq: 1003));
+        Assert.Equal([[1]], sink.Payloads);
+
+        now = 3_500;
+        reassembler.HandleIpPacket(Ip(Server, ServerPort, Local, LocalPort, [5], seq: 1004));
+
+        Assert.Equal([[1], [3], [4], [5]], sink.Payloads);
+    }
+
+    private void Validate()
+    {
+        for (int i = 0; i < 5; i++)
+        {
+            m_device.HandleDatagram(Ip(Server, ServerPort, Local, LocalPort, [0x0B, 0x0E, 0x00, 0x36, 0, 0], seq: (uint)(i * 6)));
+        }
+    }
+
     private static uint Addr(string ip) => BitConverter.ToUInt32(IPAddress.Parse(ip).GetAddressBytes());
 
     private static byte[] Ip(uint src, ushort srcPort, uint dst, ushort dstPort, byte[] payload, uint seq = 1)
