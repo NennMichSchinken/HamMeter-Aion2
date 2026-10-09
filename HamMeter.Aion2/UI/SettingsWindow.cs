@@ -186,6 +186,11 @@ public sealed class SettingsWindow
                 ImGui.Dummy(new Vector2(0f, 4f));
                 changed |= CheckboxRow("Only show in combat", ref m_config.OnlyInCombat);
                 changed |= CheckboxRow("Confirm before reset", ref m_config.ConfirmReset);
+                changed |= CheckboxRow("Reset when a dungeon run starts", ref m_config.ResetOnNewDungeonRun);
+                ImGui.Indent(24f);
+                ImGui.TextDisabled("Clears the meter and history when you enter a dungeon for a");
+                ImGui.TextDisabled("new run. Porting out and back in during a run keeps them.");
+                ImGui.Unindent(24f);
                 ImGui.Dummy(new Vector2(0f, 6f));
                 changed |= SliderWhole("Fight ends after (s)", ref m_config.FightEnd, 0f, 60f);
                 ImGui.Indent(24f);

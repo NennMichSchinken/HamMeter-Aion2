@@ -92,6 +92,15 @@ public static class Program
         recorder.DeleteExpired();
         engine.PacketFramed += recorder.Record;
 
+        engine.Dungeons.NewRun += dungeon =>
+        {
+            log.LogInformation("New run in dungeon {Dungeon}{Reset}", dungeon, config.ResetOnNewDungeonRun ? ", meter reset" : string.Empty);
+            if (config.ResetOnNewDungeonRun)
+            {
+                tracker.Clear();
+            }
+        };
+
         tracker.Finished += encounter =>
         {
             if (engine.SkillLog?.Drain() is { } skills)

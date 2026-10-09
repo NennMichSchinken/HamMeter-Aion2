@@ -6,6 +6,13 @@ Format (read by HamMeter's "What's new" and the update popup, keep it this way):
   should not skip (e.g. a parser fix after an Aion 2 patch).
 - Each line is `- New: ...`, `- Improved: ...` or `- Fixed: ...`.
 
+## 0.3.1 - 2026-10-09
+- New: Every new dungeon run starts with an empty meter and history. Porting out and back in during a run keeps your fights (Settings → Display, on by default).
+- Fixed: Party members show up in the open world too, also when HamMeter starts after the party was formed or while they stand next to you.
+- Fixed: Players nearby no longer show up right after HamMeter starts.
+- Fixed: In a dungeon, party members show with their names instead of grey "Player" entries when HamMeter starts inside it.
+- Fixed: Your name shows after your first kill again, and names are no longer doubled (such as "HeranorHeranor").
+
 ## 0.3.0 - 2026-10-07
 - New: HamMeter reads the game with its own packet reader.
 - New: Group play: your party counts on every enemy of the group, with the tank's damage taken and heals between party members.

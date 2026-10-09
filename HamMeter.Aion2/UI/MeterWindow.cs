@@ -34,6 +34,7 @@ public sealed class MeterWindow
     private bool m_visible = true;
     private Metric m_metric = Metric.DamageDone;
     private int m_view = -1; // -1 = Current, -2 = Overall, >=0 = past index
+    private int m_generation; // the tracker's clears this view has caught up with
 
     // classIcon: texture handle for a class tag (IntPtr.Zero when not loaded).
     // status: a message shown instead of the bars when capture isn't running.
@@ -67,6 +68,14 @@ public sealed class MeterWindow
 
     private EncounterSnapshot? GetDisplayedEvent()
     {
+        // Cleared elsewhere (a new dungeon run): back to the current fight.
+        if (m_tracker.Generation != m_generation)
+        {
+            m_generation = m_tracker.Generation;
+            m_animFractions.Clear();
+            m_view = -1;
+        }
+
         if (m_config.TestMode)
         {
             return TestData.Build();

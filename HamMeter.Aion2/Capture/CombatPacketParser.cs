@@ -11,17 +11,22 @@ namespace HamMeter.Capture;
 //   - damage taken (monsters hitting a player),
 //   - deaths of players, and of monsters (they pause the fight clock).
 // Only the user and the party reach the tracker; players nearby are dropped here. A player
-// without a name while party members are unaccounted for may be one of them and counts
-// on the fight's enemies.
+// without a name while party members in a dungeon are unaccounted for may be one of them
+// and counts on the fight's enemies. Until the user is known the packets wait.
 // Who is who comes from an IEntityDirectory, what skill codes mean from ISkillRules.
 public sealed class CombatPacketParser
 {
     private const long MaxAmount = 99_999_999;
+    private const int MaxWaiting = 50_000;
 
     private readonly IEntityDirectory m_entities;
     private readonly ISkillRules m_skills;
     private readonly EncounterTracker m_tracker;
     private readonly ILogger<CombatPacketParser> m_log;
+
+    // Combat packets from before the user was known, with their time (see Process).
+    private readonly Queue<(DateTime Time, ushort Opcode, byte[] Packet)> m_waiting = new();
+    private DateTime? m_waitingTime; // time of the waiting packet being parsed
 
     public CombatPacketParser(IEntityDirectory entities, ISkillRules skills, EncounterTracker tracker, ILogger<CombatPacketParser> log)
     {
@@ -36,6 +41,12 @@ public sealed class CombatPacketParser
     // Time of the packet being parsed; a replay sets it to the recorded time.
     public Func<DateTime> Clock { get; set; } = () => DateTime.Now;
 
+    // How far back combat packets are kept while the user is not known (see Process).
+    public TimeSpan UserWait { get; init; } = TimeSpan.FromSeconds(30);
+
+    // False: every player counts until the user is known, nothing waits (tests).
+    public bool WaitForUser { get; init; } = true;
+
     // Per-skill totals for checking against the in-game meter; null = not collected.
     public SkillLog? SkillLog { get; set; }
 
@@ -44,9 +55,56 @@ public sealed class CombatPacketParser
         router.On(Opcodes.Hit, p => this.Process(Opcodes.Hit, p));
         router.On(Opcodes.Tick, p => this.Process(Opcodes.Tick, p));
         router.On(Opcodes.Death, p => this.Process(Opcodes.Death, p));
+
+        // Registered after the entity parser, so the registry knows the user by now.
+        router.On(Opcodes.UserState, _ => this.ReleaseWaiting());
+        router.On(Opcodes.OwnCharacter, _ => this.ReleaseWaiting());
     }
 
+    // Until the user is known HamMeter cannot tell the user and the party from players
+    // nearby and would list everyone (open world, 2026-10-08: the user became known 7 to
+    // 16 s after the start and strangers filled the first fight). So the packets wait for
+    // the user and are parsed with their own time once it is known; only the last
+    // UserWait of them are kept. They never count without the user: idle at the start, the
+    // user was still unknown after minutes (2026-10-08, 21:55), and counting everyone
+    // after a while listed the strangers again.
     public void Process(ushort opcode, byte[] packet)
+    {
+        DateTime now = this.Clock();
+        if (!m_entities.UserKnown && this.WaitForUser)
+        {
+            m_waiting.Enqueue((now, opcode, packet));
+            while (m_waiting.Count > MaxWaiting || now - m_waiting.Peek().Time > this.UserWait)
+            {
+                m_waiting.Dequeue();
+            }
+
+            return;
+        }
+
+        this.ReleaseWaiting();
+        this.Parse(opcode, packet);
+    }
+
+    private void ReleaseWaiting()
+    {
+        if (m_waiting.Count == 0 || !m_entities.UserKnown)
+        {
+            return;
+        }
+
+        while (m_waiting.TryDequeue(out var waiting))
+        {
+            m_waitingTime = waiting.Time;
+            this.Parse(waiting.Opcode, waiting.Packet);
+        }
+
+        m_waitingTime = null;
+    }
+
+    private DateTime Now() => m_waitingTime ?? this.Clock();
+
+    private void Parse(ushort opcode, byte[] packet)
     {
         try
         {
@@ -107,7 +165,7 @@ public sealed class CombatPacketParser
             return;
         }
 
-        DateTime now = this.Clock();
+        DateTime now = this.Now();
         PlayerRef? source = this.ResolveSource(actorId, skillCode);
 
         if (source is null)
@@ -222,7 +280,7 @@ public sealed class CombatPacketParser
             return;
         }
 
-        DateTime now = this.Clock();
+        DateTime now = this.Now();
         PlayerRef? source = this.ResolveSource(actorId, skillCode);
 
         if (isHeal)
@@ -267,13 +325,13 @@ public sealed class CombatPacketParser
 
         if (this.ResolvePlayer(entityId) is { } player && (this.IsOurs(player) || this.MaybeOurs(player)))
         {
-            m_tracker.Death(this.Clock(), player, this.IsOurs(player));
+            m_tracker.Death(this.Now(), player, this.IsOurs(player));
             return;
         }
 
         // Anything else that dies is no enemy any more, whatever HamMeter took it for: once
         // the last engaged one is dead the fight clock pauses (a no-op for the rest).
-        m_tracker.EnemyDied(this.Clock(), entityId);
+        m_tracker.EnemyDied(this.Now(), entityId);
     }
 
     // ----- Entity resolution ------------------------------------------------------------
@@ -353,13 +411,15 @@ public sealed class CombatPacketParser
     }
 
     // The user and the party versus players who only happen to be nearby, who never count.
-    // Until the user is known every player counts.
+    // Until the user is known every player counts (only when nothing waits, see WaitForUser).
     private bool IsOurs(PlayerRef p) => !m_entities.UserKnown || p.IsUser || m_entities.InParty(p.Id);
 
-    // A player HamMeter has no name for while party members are still unaccounted for: may
-    // be one of them. Started inside a dungeon, the party's name packets came before
-    // HamMeter did and two of four members went missing (replay of 2026-10-07). Strangers
-    // who come into view while HamMeter runs have names, and solo there is no party to miss.
+    // A player HamMeter has no name for while party members in a dungeon are still
+    // unaccounted for: may be one of them. Started inside a dungeon, the party's name
+    // packets came before HamMeter did and two of four members went missing (replay of
+    // 2026-10-07). Strangers who come into view while HamMeter runs have names, solo there
+    // is no party to miss, and in the open world the party is often elsewhere while
+    // strangers HamMeter has no name for are around (see EntityRegistry.PartyIncomplete).
     private bool MaybeOurs(PlayerRef p) =>
         !m_entities.IsSummon(p.Id) && !m_entities.IsMonster(p.Id)
         && m_entities.Player(p.Id) is { Name: null, IsUser: false }

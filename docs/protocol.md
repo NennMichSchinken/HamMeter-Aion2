@@ -214,12 +214,15 @@ out wrong go on an exclusion list (§8).
 |---|---|---|
 | length, opcode | | |
 | entity | varint | who died |
-| unknown | varint | |
-| killer flag | u8 | `01` = a killer block follows (**observed** for monsters killed by a player) |
-| killer | varint | entity id of the player who landed the killing blow |
-| unknown | varint | constant per character |
-| killer name | u8 length + UTF-8 | the killer's character name |
+| unknown | u32 LE | |
+| killer | varint | entity id of the player who landed the killing blow; `0` = none |
+| killer's server | u16 LE | the server id of §6.4, e.g. `0C 09`; `0` without a killer |
+| killer name | u8 length + UTF-8 | the killer's character name; empty without a killer |
 | padding | zero bytes | |
+
+All 233 deaths of two recordings (2026-10-07/08) read this way. Earlier HamMeter read the
+two middle fields as varints with a `01` flag; that only fit by chance and doubled names
+("HeranorHeranor") when the server id's second byte was taken as the name's length.
 
 The killer block gives the user's name at the first kill, without waiting for a zone
 change (`33 36`).
@@ -285,7 +288,8 @@ so party members are mostly matched by name.
 
 **Status: observed** — structured, the best-understood entity packet. HamMeter reads it
 (`Game/PartyPacket.cs`): party members count like the user (they start fights, their
-damage taken and heals count), matched to entities by the link (§6.3) or by name.
+damage taken and heals count), matched to entities by the link (§6.3), by name, or by
+the database id in their appearance (§6.11).
 
 Header:
 
@@ -408,6 +412,95 @@ packet is not decoded. Other packets seen only for the user (so far): `03 8D`, `
 Entity ids seem stable longer than a zone: the same character kept id 3580 over several
 hours and zone changes.
 
+### 6.11 `1C 92` — party member
+
+**Status: observed** (3 recordings, open world and dungeon, 2026-10-07/08)
+
+One packet per party member other than the user, about every 2 seconds, also for members
+far away. HamMeter reads the start (`EntityPacketParser.OnPartyMember`):
+
+| Field | Type |
+|---|---|
+| length, opcode | |
+| database id | u64 LE — low 32 bits character id, top 16 bits server id (as in §6.4) |
+| unknown | u32 LE |
+| zone | u32 LE — inside a dungeon its dungeon id from the monster list (600002), in the open world e.g. 1110 |
+| unknown | 8 bytes |
+| position | 3 × f32 LE (x, y, z) — the same values as in the member's `45 36` and latest `1A 37` / `1B 37` (§6.12) |
+| … | more, then the legion name (u8 length + UTF-8) |
+
+It has no name and no entity id. **Observed:** a member in view sometimes gets none for a
+while (open world, 25 s), in the dungeon they came the whole time.
+
+Unlike `02 97`, it also comes when HamMeter starts after the party was formed: in the open
+world (2026-10-08) not a single `02 97` arrived in 7 minutes. HamMeter takes every member
+it sees as part of the party; a `02 97` drops those not on its list.
+
+**Link to the entity**, two ways:
+
+- The appearance of a player (`45 36`) carries the player's database id further back in
+  the packet (byte ~1100 of ~1500; the layout around it varies). HamMeter looks for the
+  8 bytes of every known member there and links the entity to that character.
+- A member already in view when HamMeter starts has no `45 36` any more. Its `1C 92`
+  position equals the latest `1A 37` / `1B 37` position of its entity (dungeon,
+  2026-10-07: all three such members found within 25 s of the start). HamMeter links the
+  closest entity within 3 units that is not the user, a summon, a monster or linked
+  already.
+
+### 6.12 `1A 37` / `1B 37` — position
+
+**Status: observed** (about 3,000 packets of one recording, players and monsters)
+
+| Field | Type |
+|---|---|
+| length, opcode | |
+| entity | varint |
+| `1A 37`: unknown | 2 bytes (always `00 00` so far) |
+| `1B 37`: flags | u8 — when odd, one more unknown byte follows |
+| position | 3 × f32 LE (x, y, z) |
+| … | 2 to 4 more bytes |
+
+`1C 37` and `1D 37` start with the entity too and look like movement as well; HamMeter
+does not read them.
+
+### 6.13 `01 40` — zone entered
+
+**Status: observed** (10 recordings, 2026-10-07/08)
+
+| Field | Type |
+|---|---|
+| length, opcode | |
+| zone | u32 LE — the open world 1110, a dungeon its id from the monster list (600011), other instances other numbers (50, 510034, 320036, …) |
+| … | 11 or 20 more bytes |
+
+Arrives with every zone change of the user, entering and leaving, and now and then again
+inside the same zone (2026-10-07: twice in the middle of a run). It comes in the same
+second as the `33 36` of the change.
+
+### 6.14 `00 61` — dungeon state
+
+**Status: observed** (the same recordings)
+
+| Field | Type |
+|---|---|
+| length, opcode | |
+| zone | u32 LE (as in §6.13) |
+| state | u8 |
+| time | u64 LE, Unix milliseconds |
+| time | u64 LE, Unix milliseconds, `0` in state 1 |
+
+States: `1` on entering (2026-10-08 22:26:54), `2` once the run is under way, with the
+second time exactly 1 hour after the first (the time limit), `3` the moment the last boss
+dies (Divine Auldor, 22:34:45; Ultimate Berk, 2026-10-07), with the second time 10 minutes
+after the first, `4` right after `3` in some instances.
+
+**New run (HamMeter, `Game/DungeonRuns.cs`):** entering a zone that is a dungeon of the
+monster list starts a new run, unless it is the dungeon of the last run, that run was not
+cleared (state 3) and it started less than an hour ago: that is porting out and back in.
+Leaving never starts anything. With the setting "Reset when a dungeon run starts" (on by
+default) the meter and its history are cleared. **Open:** whether a re-entry into a run
+sends state 1 again or a new first time; that would tell runs apart without the rule.
+
 ### 6.9 Not used by HamMeter
 
 `2A 38`, `2B 38` buffs/effects; `49 36` character stats. Listed so they are recognised
@@ -488,21 +581,25 @@ of 2026-10-07) and kept a fight going through the walk to the next pack. An enem
 hit and that hit nobody for 10 s leaves the fight as if it died; bosses stay until they die.
 
 **Party and players nearby:** once the user is known (§6.10), only the user and the party
-(§6.4) are listed. Other players never count, not even on enemies the user or the party
-fight too (strangers in the open world filled the list that way); a stranger's heal on
-one of ours still counts as healing taken. Until the user is known every player counts.
+(§6.4, §6.11) are listed. Other players never count, not even on enemies the user or the
+party fight too (strangers in the open world filled the list that way); a stranger's heal
+on one of ours still counts as healing taken. Until the user is known the combat packets
+wait (the user became known 7 to 16 s after the start in the open world, 2026-10-08) and
+are then parsed with their own time; only the last 30 s are kept. They never count
+without the user: idle at the start, no `4A 36` came for minutes (2026-10-08, 21:55).
 Names come with the packet of a player appearing (`45 36`) or a killing blow (§5.3); when
 HamMeter starts inside a dungeon the appearance packets have passed. So while party
-members are unaccounted for (no link, no name), a player without a name may be one of
-them and counts on the fight's enemies, without starting a fight of its own.
+members in a dungeon (zone of §6.11) are unaccounted for (no link, no name), a player
+without a name may be one of them and counts on the fight's enemies, without starting a
+fight of its own. Not in the open world: members are often far away there while strangers
+without a name are around.
 
 ---
 
 ## Open points
 
-0. Which packet says "entered a dungeon" (the meter should start fresh there, but not
-   when leaving): candidates are the party's dungeon id (§6.4) and the zone change
-   (`33 36`, a new user entity in `4A 36`). The replay report lists zone changes, the
+0. A recording that ports out of a dungeon run and back in, to check the rule of §6.14
+   against what `00 61` sends on the re-entry. The replay report lists zone changes, the
    first monster of each dungeon and every packet carrying a known dungeon id.
 
 1. Group test on Global: party list packing (§6.6), entity link (§6.3), heals on others,

@@ -25,6 +25,7 @@ public static class Replay
 
         DateTime now = DateTime.MinValue;
         engine.Parser.Clock = () => now;
+        engine.Dungeons.Clock = () => now;
         var own = new List<(EncounterSnapshot Fight, string? Skills)>();
         tracker.Finished += e => own.Add((e, engine.SkillLog?.Drain()));
 
@@ -63,12 +64,23 @@ public static class Replay
         engine.Entities.SummonRegistered += (summon, owner) => summons.Add(
             $"  {now:HH:mm:ss} summon {summon} -> owner {Who(owner)}{(engine.Entities.SummonOwner(owner) is int top ? $", itself a summon of {Who(top)}" : string.Empty)}");
 
+        // Party members from 1C 92 and how they were tied to an entity (§6.11).
+        var members = new List<string>();
+        engine.Entities.MemberLinked += (entity, character, how) => members.Add($"  {now:HH:mm:ss} character {character} -> entity {Who(entity)} by {how}");
+
         // Zone changes and the first monster of each dungeon (monster list), to find the
         // signal for "entered a dungeon": the meter should start fresh there.
         var zones = new List<string>();
         int? zoneUser = null;
         var dungeonsSeen = new HashSet<int>();
         engine.Router.On(Opcodes.OwnCharacter, p => zones.Add($"  {now:HH:mm:ss} 33 36 own character, entity {PacketReader.Body(p).ReadVarInt()}"));
+        engine.Router.On(Opcodes.ZoneEntered, p => zones.Add($"  {now:HH:mm:ss} 01 40 zone {PacketReader.Body(p).ReadU32()}"));
+        engine.Router.On(Opcodes.DungeonState, p =>
+        {
+            PacketReader r = PacketReader.Body(p);
+            zones.Add($"  {now:HH:mm:ss} 00 61 dungeon {r.ReadU32()} state {r.ReadU8()}");
+        });
+        engine.Dungeons.NewRun += dungeon => zones.Add($"  {now:HH:mm:ss} NEW RUN in dungeon {dungeon}: the meter resets");
         engine.Router.On(Opcodes.UserState, p =>
         {
             int id = (int)PacketReader.Body(p).ReadVarInt();
@@ -94,8 +106,14 @@ public static class Replay
         // First body varint per packet, to find packets that are only ever about the user.
         var firstIds = new List<(ushort Op, uint Id, DateTime Time)>();
 
-        // HAMMETER_FIND=<text>: which opcodes carry this text (UTF-8), e.g. a character name.
-        byte[]? find = Environment.GetEnvironmentVariable("HAMMETER_FIND") is { Length: > 0 } f ? System.Text.Encoding.UTF8.GetBytes(f) : null;
+        // HAMMETER_FIND=<text>: which opcodes carry this text (UTF-8), e.g. a character name;
+        // HAMMETER_FIND=hex:<bytes> for raw bytes, e.g. a character id.
+        byte[]? find = Environment.GetEnvironmentVariable("HAMMETER_FIND") switch
+        {
+            { Length: > 4 } f when f.StartsWith("hex:", StringComparison.OrdinalIgnoreCase) => Convert.FromHexString(f[4..]),
+            { Length: > 0 } f => System.Text.Encoding.UTF8.GetBytes(f),
+            _ => null,
+        };
         var found = new List<string>();
 
         // HAMMETER_WINDOW=HH:mm:ss-HH:mm:ss: every hit and tick in that time span.
@@ -208,6 +226,9 @@ public static class Replay
         report.AppendLine($"Fights: {own.Count}").AppendLine();
         report.AppendLine("Party lists (02 97):");
         parties.ForEach(l => report.AppendLine(l));
+        report.AppendLine();
+        report.AppendLine("Party members linked (1C 92):");
+        members.ForEach(l => report.AppendLine(l));
         report.AppendLine();
         report.AppendLine("Summons (41 36):");
         summons.ForEach(l => report.AppendLine(l));
