@@ -23,6 +23,8 @@ public sealed class PacketEngine : IDisposable
             SkillLog = new SkillLog(),
         };
         this.Parser.Register(router);
+        this.Dungeons = new DungeonRuns();
+        this.Dungeons.Register(router);
         m_capture = capture?.Invoke(this.Stream);
     }
 
@@ -39,6 +41,8 @@ public sealed class PacketEngine : IDisposable
     public EntityRegistry Entities { get; }
 
     public CombatPacketParser Parser { get; }
+
+    public DungeonRuns Dungeons { get; }
 
     public string? DeviceName => m_capture?.DeviceName;
 

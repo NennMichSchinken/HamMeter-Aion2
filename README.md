@@ -42,6 +42,8 @@ HamMeter reads the game's network packets passively (via Npcap, or Windows raw s
 - Metrics: Damage Done, Damage Taken, Healing Done, Healing Taken, Deaths
 - Current fight / Overall / per-fight history, named after the boss or main target
 - Boss fights are kept apart from the trash before and after them, show the boss's name at the top of the meter and are marked with a crown
+- Only you and your party are listed, also in the open world, never players nearby
+- Every new dungeon run starts with an empty meter; porting out and back in keeps your fights (can be turned off)
 - Class icons or text tags, per-class or per-role colours (fully editable)
 - Nine bar textures to choose from (Flat, Smooth, Gradient, Bevel, Sheen, Glow, Glow top, Glow bottom, Aurora)
 - Lives in the notification area (tray icon), no taskbar button

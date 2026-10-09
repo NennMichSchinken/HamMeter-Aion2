@@ -25,7 +25,11 @@ public class CombatPacketParserTests
 
     public CombatPacketParserTests()
     {
-        m_parser = new CombatPacketParser(m_entities, new SkillRules(), m_tracker, NullLogger<CombatPacketParser>.Instance);
+        // These tests run without a known user, where every player counts right away.
+        m_parser = new CombatPacketParser(m_entities, new SkillRules(), m_tracker, NullLogger<CombatPacketParser>.Instance)
+        {
+            WaitForUser = false,
+        };
     }
 
     [Fact]

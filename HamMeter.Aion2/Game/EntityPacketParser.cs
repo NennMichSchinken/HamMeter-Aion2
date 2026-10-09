@@ -1,3 +1,4 @@
+using System.Numerics;
 using System.Text;
 using HamMeter.Protocol;
 using Microsoft.Extensions.Logging;
@@ -22,6 +23,9 @@ public sealed class EntityPacketParser(EntityRegistry registry, ILogger<EntityPa
         router.On(Opcodes.UserState, this.OnUserState);
         router.On(Opcodes.Death, this.OnDeath);
         router.On(Opcodes.PartyList, this.OnParty);
+        router.On(Opcodes.PartyMember, this.OnPartyMember);
+        router.On(Opcodes.Position, p => this.OnPosition(p, movement: false));
+        router.On(Opcodes.Movement, p => this.OnPosition(p, movement: true));
         router.On(Opcodes.EntityLink, this.OnEntityLink);
     }
 
@@ -50,6 +54,53 @@ public sealed class EntityPacketParser(EntityRegistry registry, ILogger<EntityPa
         }
     }
 
+    // ----- 1C 92: a party member (§6.11) -----------------------------------------------
+
+    // Body: database id u64, unknown u32, zone u32 (the dungeon id inside a dungeon),
+    // 8 unknown bytes, position, ...
+    private void OnPartyMember(byte[] packet)
+    {
+        PacketReader r = PacketReader.Body(packet);
+        ulong databaseId = r.ReadU64();
+        r.ReadU32(); // unknown
+        uint zone = r.ReadU32();
+        r.Skip(8);
+        Vector3 position = ReadPosition(r);
+        if ((uint)databaseId > 0)
+        {
+            registry.SetMember(databaseId, zone, position);
+        }
+    }
+
+    // ----- 1A 37 / 1B 37: an entity's position (§6.12) ---------------------------------
+
+    // Body: entity varint, then 1A 37: 2 unknown bytes; 1B 37: a flag byte and, when it is
+    // odd, one more byte (all 1,457 of a recording read that way); then the position.
+    private void OnPosition(byte[] packet, bool movement)
+    {
+        PacketReader r = PacketReader.Body(packet);
+        int entityId = (int)r.ReadVarInt();
+        if (!movement)
+        {
+            r.Skip(2);
+        }
+        else if ((r.ReadU8() & 1) != 0)
+        {
+            r.Skip(1);
+        }
+
+        Vector3 position = ReadPosition(r);
+        if (entityId > 0 && float.IsFinite(position.X) && float.IsFinite(position.Y) && float.IsFinite(position.Z))
+        {
+            registry.SetPosition(entityId, position);
+        }
+    }
+
+    private static Vector3 ReadPosition(PacketReader r) => new(
+        BitConverter.UInt32BitsToSingle(r.ReadU32()),
+        BitConverter.UInt32BitsToSingle(r.ReadU32()),
+        BitConverter.UInt32BitsToSingle(r.ReadU32()));
+
     // ----- 20 36: entity id <-> character id (§6.3) ------------------------------------
 
     // Body: 2 unknown bytes, entity varint, 4 unknown bytes, character id u32.
@@ -68,19 +119,16 @@ public sealed class EntityPacketParser(EntityRegistry registry, ILogger<EntityPa
 
     // ----- 04 8D: a monster's death names the player who killed it (§5.3) -------------
 
-    // Body: dead entity, varint, 01, killer entity, varint, u8 length + killer name.
+    // Body: dead entity, u32, killer entity (0 = none), killer's server u16, u8 length +
+    // killer name. Read as varints the two middle fields swallowed the name's length byte
+    // ("HeranorHeranor", 2026-10-08).
     private void OnDeath(byte[] packet)
     {
         PacketReader r = PacketReader.Body(packet);
         r.ReadVarInt();         // the dead entity
-        r.ReadVarInt();         // unknown
-        if (r.ReadU8() != 0x01) // no killer block
-        {
-            return;
-        }
-
+        r.ReadU32();            // unknown
         int killer = (int)r.ReadVarInt();
-        r.ReadVarInt();         // unknown, constant per character
+        r.ReadU16();            // the killer's server
         int length = r.ReadU8();
         if (length is < 1 or > MaxNameBytes || length > r.Remaining || registry.Player(killer) is null)
         {
@@ -126,6 +174,10 @@ public sealed class EntityPacketParser(EntityRegistry registry, ILogger<EntityPa
         if (isUser)
         {
             log.LogInformation("Own character detected (entity {Id})", entityId);
+        }
+        else
+        {
+            registry.LinkByAppearance(entityId, packet);
         }
     }
 

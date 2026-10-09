@@ -13,6 +13,7 @@ public class Config
     // --- Display ---
     public bool OnlyInCombat = false;
     public bool ConfirmReset = true;
+    public bool ResetOnNewDungeonRun = true; // empty meter and history for every new run
     public bool Locked = false;
     public float FightEnd = 5f;        // seconds after the last enemy died
     public float CombatTimeout = 30f;  // safety: seconds without any damage

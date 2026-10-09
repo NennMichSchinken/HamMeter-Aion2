@@ -46,6 +46,7 @@ public sealed class EncounterTracker
     private EncounterSnapshot? m_lastFinished;
     private EncounterSnapshot? m_overall;
     private int m_overallCount = -1;
+    private int m_generation;
 
     // Seconds after the last engaged enemy died before the fight counts as over.
     public double FightEndSeconds { get; set; } = 5;
@@ -334,10 +335,15 @@ public sealed class EncounterTracker
         }
     }
 
+    // Counts the clears, so a view into the history notices one it did not start itself
+    // (a new dungeon run clears on the capture thread).
+    public int Generation => Volatile.Read(ref m_generation);
+
     public void Clear()
     {
         lock (m_sync)
         {
+            m_generation++;
             m_current = null;
             m_lastFinished = null;
             m_past.Clear();

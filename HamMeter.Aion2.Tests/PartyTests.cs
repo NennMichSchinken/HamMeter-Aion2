@@ -87,6 +87,7 @@ public class PartyTests
 
         engine.Stream.Dispatch(Packet(Opcodes.UserState, w => { w.VarInt(User); w.Bytes(6); }));
         engine.Stream.Dispatch(PartyList(Packing.PerRun));                // no names, no links
+        engine.Stream.Dispatch(Member(0x0A02, Dungeon));                  // inside a dungeon
         engine.Stream.Dispatch(Hit(Tank, Mob, 12_020_000, 800));          // nothing to join yet
         Assert.Null(tracker.Current);
 
@@ -113,12 +114,129 @@ public class PartyTests
 
         engine.Stream.Dispatch(Packet(Opcodes.UserState, w => { w.VarInt(User); w.Bytes(6); }));
         engine.Stream.Dispatch(PartyList(Packing.PerRun));                // the user is Freitag
+        engine.Stream.Dispatch(Member(0x0A02, Dungeon));
         engine.Stream.Dispatch(OtherCharacter(Tank, "Hamzi", 12));
         engine.Stream.Dispatch(Link(Healer, 0x0A03));
         engine.Stream.Dispatch(Hit(User, Mob, 17_010_000, 1_000));
         engine.Stream.Dispatch(Hit(Stranger, Mob, 11_020_000, 500));
 
         Assert.Single(tracker.Current!.Combatants);
+    }
+
+    // Open world, HamMeter started with the party already formed: no 02 97 comes, only the
+    // members' 1C 92; the appearance (45 36) carries the member's database id (2026-10-08).
+    [Fact]
+    public void OpenWorld_AMemberKnownFromMemberPackets_CountsOnceItAppears()
+    {
+        var tracker = new EncounterTracker();
+        using PacketEngine engine = PacketEngine.Offline(tracker, NullLoggerFactory.Instance);
+        const int TheirMob = Mob + 1;
+
+        engine.Stream.Dispatch(Packet(Opcodes.UserState, w => { w.VarInt(User); w.Bytes(6); }));
+        engine.Stream.Dispatch(Member(0x0A03, OpenWorld));
+        engine.Stream.Dispatch(OtherCharacter(Healer, "Brotkrume", 15, Server | 0x0A03));
+        engine.Stream.Dispatch(OtherCharacter(Tank, "Hamzi", 12, Server | 0x0B07)); // not in the party
+        engine.Stream.Dispatch(Hit(Healer, TheirMob, 15_020_000, 900));           // her own pull
+        engine.Stream.Dispatch(Hit(Tank, TheirMob, 12_020_000, 800));
+
+        var fight = tracker.Current!.Combatants;
+        Assert.Equal("Brotkrume", Assert.Single(fight).Name);
+        Assert.Equal(900, fight[0].DamageTotal);
+    }
+
+    // A member already in view when HamMeter started: no 45 36, but its 1C 92 carries the
+    // position of its entity's latest 1A 37 / 1B 37 (dungeon, 2026-10-07).
+    [Fact]
+    public void AMemberInViewBeforeTheStart_IsFoundByItsPosition()
+    {
+        var tracker = new EncounterTracker();
+        using PacketEngine engine = PacketEngine.Offline(tracker, NullLoggerFactory.Instance);
+        const int Stranger = 3700;
+
+        engine.Stream.Dispatch(Packet(Opcodes.UserState, w => { w.VarInt(User); w.Bytes(6); }));
+        engine.Stream.Dispatch(Position(Stranger, -24_000f, 34_700f, -660f));
+        engine.Stream.Dispatch(Movement(Healer, flags: 0x05, -24_256f, 34_761f, -663f));
+        engine.Stream.Dispatch(Member(0x0A03, Dungeon, -24_256f, 34_761f, -662f));
+        engine.Stream.Dispatch(Hit(Healer, Mob, 15_020_000, 900));
+        engine.Stream.Dispatch(Hit(Stranger, Mob, 11_020_000, 500));
+
+        Assert.Equal(Healer, Assert.Single(tracker.Current!.Combatants).Id);
+    }
+
+    [Fact]
+    public void OpenWorld_UnnamedStrangers_DoNotCount_WhileMembersAreFarAway()
+    {
+        var tracker = new EncounterTracker();
+        using PacketEngine engine = PacketEngine.Offline(tracker, NullLoggerFactory.Instance);
+        const int Stranger = 3700;
+
+        engine.Stream.Dispatch(Packet(Opcodes.UserState, w => { w.VarInt(User); w.Bytes(6); }));
+        engine.Stream.Dispatch(Member(0x0A02, OpenWorld));                // never appears
+        engine.Stream.Dispatch(Hit(User, Mob, 17_010_000, 1_000));
+        engine.Stream.Dispatch(Hit(Stranger, Mob, 11_020_000, 500));
+
+        Assert.Single(tracker.Current!.Combatants);
+    }
+
+    [Fact]
+    public void AReusedEntityId_LosesThePartyLink()
+    {
+        var tracker = new EncounterTracker();
+        using PacketEngine engine = PacketEngine.Offline(tracker, NullLoggerFactory.Instance);
+
+        engine.Stream.Dispatch(Packet(Opcodes.UserState, w => { w.VarInt(User); w.Bytes(6); }));
+        engine.Stream.Dispatch(Member(0x0A03, OpenWorld));
+        engine.Stream.Dispatch(OtherCharacter(Healer, "Brotkrume", 15, Server | 0x0A03));
+        engine.Stream.Dispatch(OtherCharacter(Healer, "Fremder", 15, Server | 0x0B07));
+        engine.Stream.Dispatch(Hit(Healer, Mob, 15_020_000, 900));
+
+        Assert.Null(tracker.Current);
+    }
+
+    // 04 8D: dead entity, u32, killer, the killer's server, name (recording of 2026-10-08).
+    [Fact]
+    public void AKillingBlow_NamesTheKiller()
+    {
+        var tracker = new EncounterTracker();
+        using PacketEngine engine = PacketEngine.Offline(tracker, NullLoggerFactory.Instance);
+
+        engine.Stream.Dispatch(Packet(Opcodes.UserState, w => { w.VarInt(User); w.Bytes(6); }));
+        engine.Stream.Dispatch(Hit(User, Mob, 12_020_000, 1_000));
+        engine.Stream.Dispatch(Packet(Opcodes.Death, w =>
+        {
+            w.VarInt(Mob);
+            w.U32(0x0112_CFAE);
+            w.VarInt(User);
+            w.U16(0x090C);
+            w.U8(7);
+            w.Raw("Shinken"u8.ToArray());
+            w.U8(9);
+            w.Raw("SurvSided"u8.ToArray());
+        }));
+
+        Assert.Equal("Shinken", engine.Entities.Player(User)!.Value.Name);
+    }
+
+    // Before the user is known nobody can be told apart; the packets wait and only ours count.
+    [Fact]
+    public void BeforeTheUserIsKnown_HitsWait_AndOnlyOursCountAfterwards()
+    {
+        var tracker = new EncounterTracker();
+        using PacketEngine engine = PacketEngine.Offline(tracker, NullLoggerFactory.Instance);
+        DateTime t0 = new(2026, 10, 8, 21, 12, 40), now = t0;
+        engine.Parser.Clock = () => now;
+        const int Stranger = 3700;
+
+        engine.Stream.Dispatch(Hit(Stranger, Mob, 11_020_000, 500));
+        engine.Stream.Dispatch(Hit(User, Mob, 12_020_000, 1_000));
+        now = t0.AddSeconds(7);
+        Assert.Null(tracker.Current);
+
+        engine.Stream.Dispatch(Packet(Opcodes.UserState, w => { w.VarInt(User); w.Bytes(6); }));
+
+        var fight = tracker.Current!;
+        Assert.Equal(1_000, Assert.Single(fight.Combatants).DamageTotal);
+        Assert.True(fight.Combatants[0].IsUser);
     }
 
     // ----- helpers ---------------------------------------------------------------------
@@ -185,8 +303,8 @@ public class PartyTests
         }
     });
 
-    // 45 36: entity, name block, class.
-    private static byte[] OtherCharacter(int entity, string name, int classId) => Packet(Opcodes.OtherCharacter, w =>
+    // 45 36: entity, name block, class; somewhere later the database id (§6.11).
+    private static byte[] OtherCharacter(int entity, string name, int classId, ulong databaseId = 0) => Packet(Opcodes.OtherCharacter, w =>
     {
         w.VarInt(entity);
         w.Bytes(4);
@@ -195,7 +313,50 @@ public class PartyTests
         w.Raw(System.Text.Encoding.UTF8.GetBytes(name));
         w.VarInt(classId);
         w.Bytes(8);
+        w.U64(databaseId);
     });
+
+    // 1C 92: database id, unknown, zone, 8 unknown bytes, position, more.
+    private static byte[] Member(uint characterId, uint zone, float x = 0, float y = 0, float z = 0) => Packet(Opcodes.PartyMember, w =>
+    {
+        w.U64(Server | characterId);
+        w.U32(6);
+        w.U32((int)zone);
+        w.Bytes(8);
+        Floats(w, x, y, z);
+        w.Bytes(12);
+    });
+
+    // 1A 37: entity, 2 unknown bytes, position.
+    private static byte[] Position(int entity, float x, float y, float z) => Packet(Opcodes.Position, w =>
+    {
+        w.VarInt(entity);
+        w.Bytes(2);
+        Floats(w, x, y, z);
+        w.Bytes(2);
+    });
+
+    // 1B 37: entity, flag byte (odd: one more byte), position.
+    private static byte[] Movement(int entity, byte flags, float x, float y, float z) => Packet(Opcodes.Movement, w =>
+    {
+        w.VarInt(entity);
+        w.U8(flags);
+        w.Bytes(flags & 1);
+        Floats(w, x, y, z);
+        w.Bytes(4);
+    });
+
+    private static void Floats(Writer w, params float[] values)
+    {
+        foreach (float v in values)
+        {
+            w.U32((int)BitConverter.SingleToUInt32Bits(v));
+        }
+    }
+
+    private const ulong Server = 0x090C_0000_0000_0000UL;
+    private const uint OpenWorld = 1110;
+    private const uint Dungeon = 600_002; // Ultimate Berk's dungeon in the monster list
 
     // 20 36: 2 unknown bytes, entity, 4 unknown bytes, character id.
     private static byte[] Link(int entity, int characterId) => Packet(Opcodes.EntityLink, w =>
