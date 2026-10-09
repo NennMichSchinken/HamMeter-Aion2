@@ -53,10 +53,13 @@ in-game meter.
   skipped: the stream continues after it and the framer re-synchronises (§2).
 - **IPv4 total length 0** means a segment Windows did not cut to the MTU (loopback, which
   VPNs and ping boosters use, or segmentation offload): its length is the captured length.
-  Npcap captures up to 256 KB per packet for the same reason. Dropping these left gaps
-  that never filled: 16 skipped gaps in 7 minutes through LagoFast on 2026-10-09, one of
+  Npcap captures up to 256 KB per packet for the same reason.
+- **Npcap filter changes drop packets.** Setting a new kernel filter makes Npcap discard
+  what waits in its buffer. HamMeter rebuilt the filter every 2 s from Aion's connections
+  (local ports and table order included), so it changed often: 16 gaps of 33–1,252 bytes
+  in 7 minutes on 2026-10-09, starting on the 2 s refresh beat and never filled, one of
   them with the spawn (`41 36`) of the user's Holy Aura, whose 8 hits on the boss were then
-  nobody's. (**Hypothesis**, to confirm with the "TCP gap skipped" lines of HamMeter.log.)
+  nobody's. The filter now names server endpoints only, sorted, and only grows.
 - `FIN` / `RST` end the stream; its buffers are dropped.
 
 ---

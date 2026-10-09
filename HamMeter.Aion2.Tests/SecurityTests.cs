@@ -171,6 +171,22 @@ public class RawSocketFilterTests
         Assert.Equal([[1, 2, 3]], m_sink.Payloads);
     }
 
+    // Each new Npcap filter drops the packets waiting in its buffer: the filter must not
+    // change when Aion's connections only come back in another order or with new local ports.
+    [Fact]
+    public void NpcapFilter_DependsOnTheServerEndpointsOnly()
+    {
+        var a = new TcpConnection(Local, LocalPort, Server, ServerPort);
+        var b = new TcpConnection(Local, 50999, Stranger, 443);
+        var bAgain = new TcpConnection(Local, 51000, Stranger, 443);
+
+        string first = NpcapCaptureDevice.Filter(NpcapCaptureDevice.Endpoints([a, b]));
+        string later = NpcapCaptureDevice.Filter(NpcapCaptureDevice.Endpoints([bAgain, a]));
+
+        Assert.Equal(first, later);
+        Assert.Equal("tcp and ((src host 198.51.100.7 and src port 443) or (src host 203.0.113.10 and src port 7777))", first);
+    }
+
     private void Validate()
     {
         for (int i = 0; i < 5; i++)

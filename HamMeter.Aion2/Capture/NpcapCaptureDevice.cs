@@ -11,9 +11,9 @@ namespace HamMeter.Capture;
 //
 // Same rules as the raw-socket capture, enforced twice:
 //   - Only the adapters that carry one of Aion2.exe's connections are opened, in
-//     non-promiscuous mode, with a kernel filter that matches exactly those
-//     connections (server -> client). Other traffic never reaches HamMeter.
-//   - TcpReassembler checks every packet against the same connection list again.
+//     non-promiscuous mode, with a kernel filter that lets through only packets from
+//     the servers Aion is connected to (server -> client).
+//   - TcpReassembler checks every packet against Aion's exact connections again.
 // Unlike raw sockets, Npcap also sees loopback, so VPN/booster tunnels work.
 public sealed class NpcapCaptureDevice : IGameCapture
 {
@@ -146,18 +146,25 @@ public sealed class NpcapCaptureDevice : IGameCapture
 
             foreach ((string name, var entry) in wanted)
             {
-                string filter = Filter(entry.Conns);
                 if (m_open.TryGetValue(name, out OpenDevice? open))
                 {
-                    if (open.Filter != filter)
+                    // Setting a filter makes Npcap drop what waits in its buffer: only when
+                    // Aion talks to a server endpoint it has not before.
+                    int before = open.Endpoints.Count;
+                    open.Endpoints.UnionWith(Endpoints(entry.Conns));
+                    if (open.Endpoints.Count != before)
                     {
-                        this.TrySetFilter(open.Device, filter);
-                        open.Filter = filter;
+                        this.TrySetFilter(open.Device, Filter(open.Endpoints));
+                        m_log.LogInformation("[NPCAP] Capture filter now covers {Count} server endpoints", open.Endpoints.Count);
                     }
                 }
-                else if (this.Open(entry.Device, filter))
+                else
                 {
-                    m_open[name] = new OpenDevice(entry.Device, filter);
+                    var endpoints = new SortedSet<string>(Endpoints(entry.Conns), StringComparer.Ordinal);
+                    if (this.Open(entry.Device, Filter(endpoints)))
+                    {
+                        m_open[name] = new OpenDevice(entry.Device, endpoints);
+                    }
                 }
             }
         }
@@ -176,11 +183,15 @@ public sealed class NpcapCaptureDevice : IGameCapture
         return devices.FirstOrDefault(d => d.Addresses.Any(a => local.Equals(a.Addr?.ipAddress)));
     }
 
-    // Kernel filter: server -> client packets of exactly these connections.
-    private static string Filter(List<TcpConnection> conns) =>
-        "tcp and (" + string.Join(" or ", conns.Select(c =>
-            $"(src host {new IPAddress(c.RemoteAddress)} and src port {c.RemotePort} " +
-            $"and dst host {c.Local} and dst port {c.LocalPort})")) + ")";
+    // Kernel filter: packets from the servers Aion is connected to. It names the server
+    // side only and in a fixed order, so it stays the same while Aion opens and closes
+    // connections (each new filter drops Npcap's buffer: 16 lost pieces of the stream in
+    // 7 minutes on 2026-10-09). TcpReassembler still takes Aion's own connections only.
+    internal static IEnumerable<string> Endpoints(IEnumerable<TcpConnection> conns) =>
+        conns.Select(c => $"(src host {new IPAddress(c.RemoteAddress)} and src port {c.RemotePort})");
+
+    internal static string Filter(IEnumerable<string> endpoints) =>
+        "tcp and (" + string.Join(" or ", endpoints.Order(StringComparer.Ordinal)) + ")";
 
     private bool Open(LibPcapLiveDevice device, string filter)
     {
@@ -294,10 +305,11 @@ public sealed class NpcapCaptureDevice : IGameCapture
         }
     }
 
-    private sealed class OpenDevice(LibPcapLiveDevice device, string filter)
+    // The server endpoints only grow while the adapter is open: see Filter.
+    private sealed class OpenDevice(LibPcapLiveDevice device, SortedSet<string> endpoints)
     {
         public LibPcapLiveDevice Device { get; } = device;
 
-        public string Filter { get; set; } = filter;
+        public SortedSet<string> Endpoints { get; } = endpoints;
     }
 }
