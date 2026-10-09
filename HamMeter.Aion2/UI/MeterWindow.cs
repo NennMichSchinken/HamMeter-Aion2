@@ -83,6 +83,20 @@ public sealed class MeterWindow
         }
     }
 
+    // Development (--preview --preview-test): the test fight with a bar expanded or the
+    // details window open, for screenshots.
+    public void PreviewTest(int playerId, bool expandedOnly)
+    {
+        if (expandedOnly)
+        {
+            m_expanded = playerId;
+        }
+        else
+        {
+            m_details.Show(playerId);
+        }
+    }
+
     public void ClearAll()
     {
         m_tracker.Clear();

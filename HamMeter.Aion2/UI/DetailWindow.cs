@@ -422,22 +422,45 @@ public sealed class DetailWindow
         this.Text(dl, new Vector2(plot.X, l.Y), "0:00", small, muted);
         string end = EncounterSnapshot.FormatDuration(length - 1);
         this.Text(dl, new Vector2(plot.X + plotW - this.TextW(end, small), l.Y), end, small, muted);
-        float lx = plot.X + this.TextW("0:00", small) + this.S(24f);
-        float mid = l.Y + (small / 2f);
+        // The legend between the two times; with a big party it goes on in more lines.
+        float left = plot.X + this.TextW("0:00", small) + this.S(24f);
+        float right = plot.X + plotW - this.TextW(end, small) - this.S(16f);
+        float lineH = small + this.S(6f);
+        float lx = left, ly = l.Y;
+        void Entry(string name, uint color, bool boss)
+        {
+            float w = this.S(19f) + this.TextW(name, small);
+            if (lx + w > right && lx > left)
+            {
+                lx = left;
+                ly += lineH;
+            }
+
+            float mid = ly + (small / 2f);
+            if (boss)
+            {
+                Dashed(dl, [new Vector2(lx, mid), new Vector2(lx + this.S(14f), mid)], color, 2f, 2f, 3f);
+            }
+            else
+            {
+                dl.AddRectFilled(new Vector2(lx, mid - 1.5f), new Vector2(lx + this.S(14f), mid + 1.5f), color, 1f);
+            }
+
+            this.Text(dl, new Vector2(lx + this.S(19f), ly), name, small, boss ? color : Col(Theme.Text));
+            lx += w + this.S(14f);
+        }
+
         foreach (var (c, _) in smooth.OrderByDescending(s => s.c.Id == me.Id))
         {
-            dl.AddRectFilled(new Vector2(lx, mid - 1.5f), new Vector2(lx + this.S(14f), mid + 1.5f), Col(m_classColor(c.Job)), 1f);
-            this.Text(dl, new Vector2(lx + this.S(19f), l.Y), c.Name, small, Col(Theme.Text));
-            lx += this.S(19f) + this.TextW(c.Name, small) + this.S(14f);
+            Entry(c.Name, Col(m_classColor(c.Job)), false);
         }
 
         if (fight.BossHp.Count > 1)
         {
-            Dashed(dl, [new Vector2(lx, mid), new Vector2(lx + this.S(14f), mid)], Col(BossLine), 2f, 2f, 3f);
-            this.Text(dl, new Vector2(lx + this.S(19f), l.Y), "Boss HP", small, Col(BossLine));
+            Entry("Boss HP", Col(BossLine), true);
         }
 
-        ImGui.Dummy(new Vector2(width, small + 2f));
+        ImGui.Dummy(new Vector2(width, ly - l.Y + small + 2f));
     }
 
     private bool Segment(string id, string label, bool on, Vector2 at, float w, float h, ImDrawListPtr dl)
